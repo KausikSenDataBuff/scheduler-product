@@ -1,31 +1,54 @@
 """
-Example Usage of the Scheduler Product Modules
+Example Usage of the Scheduler Product Modules (v1.5)
 
-This file demonstrates how to use all the modules together in a typical workflow.
+This file demonstrates how to use all the modules together in a typical workflow,
+including Phase 1.5 features: parallel capacity, machine calendars, setup times.
 """
 
 import pandas as pd
 import sys
 import os
 
-# Add the parent directory to the path so we can import the modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from data_loader import load_data
 from validator import validate_foreign_keys, validate_nulls
 from job_builder import build_jobs, initialize_machine_state
-from scheduler import run_scheduler, save_schedule, verify_schedule
+from scheduler import (
+    run_scheduler, save_schedule, verify_schedule,
+    build_setup_dict, get_setup_time, adjust_to_calendar
+)
 from kpi import compute_completion, compute_kpi_metrics
 
-def main():
-    print("=== Example Usage of Scheduler Product Modules ===\n")
 
-    # Step 1: Load data
+def main():
+    print("=== Example Usage of Scheduler Product Modules (v1.5) ===\n")
+
+    # Step 1: Load data (including Phase 1.5 optional files)
     print("1. Loading data from CSV files...")
     data = load_data()
     print(f"   Loaded {len(data)} DataFrames:")
     for key, df in data.items():
         print(f"   - {key}: {df.shape[0]} rows, {df.shape[1]} columns")
+    print()
+
+    # Phase 1.5: Show machine capacities
+    machines_df = data['machines']
+    if 'capacity' in machines_df.columns:
+        print("   Machine Capacities (Phase 1.5):")
+        caps = machines_df.groupby('department')['capacity'].mean()
+        for dept, cap in caps.items():
+            print(f"     {dept}: avg capacity = {cap:.1f}")
+    print()
+
+    # Phase 1.5: Show calendar availability
+    if 'machine_calendar' in data:
+        cal = data['machine_calendar']
+        total_hours = (cal['end_time'] - cal['start_time']).sum().total_seconds() / 3600
+        available_hours = cal[cal['is_available'] == 1].apply(
+            lambda r: (r['end_time'] - r['start_time']).total_seconds() / 3600, axis=1
+        ).sum()
+        print(f"   Calendar: {available_hours:.0f}/{total_hours:.0f} available hours ({available_hours/total_hours*100:.0f}%)")
     print()
 
     # Step 2: Validate data
@@ -54,6 +77,17 @@ def main():
     print(jobs_df.head())
     print()
 
+    # Phase 1.5: Build setup dictionary for fast lookups
+    print("3b. Building setup time index (Phase 1.5)...")
+    setup_df = data.get('setup_matrix')
+    setup_dict = build_setup_dict(setup_df)
+    if setup_dict:
+        print(f"   Indexed {len(setup_dict)} setup transitions")
+        # Demo lookup
+        demo_setup = get_setup_time('MIX_M1', 'TYRE_0000', 'TYRE_0001', setup_dict)
+        print(f"   Demo: TYRE_0000 -> TYRE_0001 on MIX_M1 = {demo_setup} min")
+    print()
+
     # Step 4: Initialize machine state
     print("4. Initializing machine state...")
     machine_state = initialize_machine_state(data)
@@ -63,13 +97,32 @@ def main():
         print(f"     {machine_id}: {jobs} (length: {len(jobs)})")
     print()
 
-    # Step 5: Run scheduler
-    print("5. Running scheduling algorithm...")
+    # Step 5: Run scheduler (Phase 1.5: capacity + calendar + setup aware)
+    print("5. Running Phase 1.5 scheduling algorithm...")
+    print("   Features: parallel capacity | machine calendar | setup times")
     schedule_df = run_scheduler(data)
     print(f"   Scheduled {len(schedule_df)} operations")
     print(f"   Columns: {list(schedule_df.columns)}")
     print("   Sample scheduled operations:")
     print(schedule_df.head())
+    print()
+
+    # Phase 1.5: Verify no downtime violations
+    print("5b. Verifying no downtime violations (Phase 1.5)...")
+    if 'machine_calendar' in data:
+        cal = data['machine_calendar']
+        downtime = cal[cal['is_available'] == 0]
+        violations = 0
+        for _, op in schedule_df.iterrows():
+            machine_downtimes = downtime[downtime['machine_id'] == op['machine_id']]
+            for _, dt in machine_downtimes.iterrows():
+                if op['start'] < dt['end_time'] and op['end'] > dt['start_time']:
+                    violations += 1
+                    break
+        if violations == 0:
+            print("   PASS: No operations scheduled during downtime")
+        else:
+            print(f"   WARN: {violations} downtime violations found")
     print()
 
     # Step 6: Save schedule
@@ -82,7 +135,7 @@ def main():
     passed, errors = verify_schedule(schedule_df)
     if passed:
         print("   PASS: Schedule verification passed:")
-        print("     - No machine has overlapping operations")
+        print("     - No machine has overlapping operations (respecting capacity)")
         print("     - Operation sequence order is respected per order")
     else:
         print("   FAIL: Schedule verification failed:")
@@ -96,14 +149,12 @@ def main():
     # Step 8: Compute completion times and KPIs
     print("8. Computing completion times and KPIs...")
 
-    # Compute completion times (with delay calculation)
     completion_df = compute_completion(schedule_df, data['orders'])
     print(f"   Computed completion times for {len(completion_df)} orders")
     print("   Sample completion times:")
     print(completion_df.head())
     print()
 
-    # Compute KPI metrics
     kpi_metrics = compute_kpi_metrics(schedule_df, data['orders'])
     print("   Key Performance Indicators:")
     print(f"     Total Orders: {kpi_metrics['total_orders']}")
@@ -123,7 +174,6 @@ def main():
     print(f"   Orders completed late: {late_orders}")
     print()
 
-    # Show worst and best performing orders
     worst_late = completion_df.nlargest(3, 'delay_hours')[['order_id', 'delay_hours']]
     best_early = completion_df.nsmallest(3, 'delay_hours')[['order_id', 'delay_hours']]
 
@@ -136,7 +186,20 @@ def main():
         print(f"     Order {row['order_id']}: {abs(row['delay_hours']):.2f} hours early")
     print()
 
+    # Phase 1.5: Section and buffer info
+    if 'sections' in data and 'buffers' in data:
+        print("10. Phase 1.5 Section/Buffer Info:")
+        sections = data['sections']
+        buffers = data['buffers']
+        print(f"    Sections: {len(sections)}")
+        for _, sec in sections.iterrows():
+            buf = buffers[buffers['section_id'] == sec['section_id']]
+            buf_cap = buf['capacity'].values[0] if len(buf) > 0 else 'N/A'
+            print(f"      {sec['section_id']}: max_wip={sec['max_wip']}, buffer_cap={buf_cap}")
+    print()
+
     print("=== Example Usage Completed Successfully ===")
+
 
 if __name__ == "__main__":
     main()

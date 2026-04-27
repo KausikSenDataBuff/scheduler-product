@@ -3,18 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scheduler Product - Production Scheduling System</title>
+    <title>Scheduler Product v1.5 - Production Scheduling System</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Scheduler Product</h1>
-            <p>Production Scheduling System</p>
+            <h1>Scheduler Product <span class="version-badge">v1.5</span></h1>
+            <p>Production Scheduling System with Parallel Capacity, Calendars & Setup Times</p>
         </header>
 
         <main>
+            <!-- Phase 1.5 Features Info -->
+            <section class="features-section" id="features-section">
+                <h2>Phase 1.5 Features</h2>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <span class="feature-icon">⚡</span>
+                        <h3>Parallel Capacity</h3>
+                        <p>Machines can process multiple concurrent operations</p>
+                    </div>
+                    <div class="feature-card">
+                        <span class="feature-icon">📅</span>
+                        <h3>Machine Calendar</h3>
+                        <p>Downtime-aware scheduling prevents unavailable periods</p>
+                    </div>
+                    <div class="feature-card">
+                        <span class="feature-icon">🔧</span>
+                        <h3>Setup Time</h3>
+                        <p>Product transition times between operations</p>
+                    </div>
+                    <div class="feature-card">
+                        <span class="feature-icon">📦</span>
+                        <h3>Sections & Buffers</h3>
+                        <p>WIP control with section-based buffers</p>
+                    </div>
+                </div>
+            </section>
+
             <!-- Progress Tracker -->
             <section class="progress-section" id="progress-section">
                 <h2>Workflow Progress</h2>
@@ -33,31 +60,65 @@
             <!-- File Upload Section -->
             <section class="upload-section" id="upload-section">
                 <h2>1. Upload Data Files</h2>
+                <p class="upload-info">Upload the core CSV files. Phase 1.5 files are optional.</p>
                 <div class="file-upload-grid">
                     <div class="file-group">
-                        <label for="machines-file">machines.csv</label>
+                        <label for="machines-file">machines.csv <span class="required">*</span></label>
                         <input type="file" id="machines-file" accept=".csv" required>
-                        <small>Machine information</small>
+                        <small>Machine info (includes capacity in v1.5)</small>
                     </div>
                     <div class="file-group">
-                        <label for="products-file">products.csv</label>
+                        <label for="products-file">products.csv <span class="required">*</span></label>
                         <input type="file" id="products-file" accept=".csv" required>
                         <small>Product information</small>
                     </div>
                     <div class="file-group">
-                        <label for="routing-file">routing.csv</label>
+                        <label for="routing-file">routing.csv <span class="required">*</span></label>
                         <input type="file" id="routing-file" accept=".csv" required>
-                        <small>Routing information</small>
+                        <small>Routing with buffer_id, transfer_time</small>
                     </div>
                     <div class="file-group">
-                        <label for="orders-file">orders.csv</label>
+                        <label for="orders-file">orders.csv <span class="required">*</span></label>
                         <input type="file" id="orders-file" accept=".csv" required>
                         <small>Order information</small>
                     </div>
                 </div>
+
+                <h3 class="optional-header">Phase 1.5 Optional Files</h3>
+                <div class="file-upload-grid optional">
+                    <div class="file-group">
+                        <label for="calendar-file">machine_calendar.csv</label>
+                        <input type="file" id="calendar-file" accept=".csv">
+                        <small>Machine availability windows</small>
+                    </div>
+                    <div class="file-group">
+                        <label for="setup-file">setup_matrix.csv</label>
+                        <input type="file" id="setup-file" accept=".csv">
+                        <small>Product transition times</small>
+                    </div>
+                    <div class="file-group">
+                        <label for="sections-file">sections.csv</label>
+                        <input type="file" id="sections-file" accept=".csv">
+                        <small>Section definitions</small>
+                    </div>
+                    <div class="file-group">
+                        <label for="buffers-file">buffers.csv</label>
+                        <input type="file" id="buffers-file" accept=".csv">
+                        <small>Buffer capacity</small>
+                    </div>
+                </div>
+
                 <div class="upload-buttons">
                     <button id="upload-btn" class="primary-btn">Upload and Validate</button>
                     <button id="next-btn" class="primary-btn" disabled>Next Step →</button>
+                </div>
+            </section>
+
+            <!-- Phase 1.5 Info Display -->
+            <section class="phase15-info-section" id="phase15-info-section" style="display: none;">
+                <h2>Phase 1.5 Configuration</h2>
+                <div id="phase15-info" class="results-container">
+                    <!-- Populated by JavaScript -->
                 </div>
             </section>
 
@@ -127,7 +188,7 @@
         </main>
 
         <footer>
-            <p>Scheduler Product - Production Scheduling System</p>
+            <p>Scheduler Product v1.5 - Phase 1.5: Stabilize Engine</p>
         </footer>
     </div>
 

@@ -1,19 +1,20 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import pandas as pd
 import os
 import shutil
 import uuid
 from pathlib import Path
+
+app = FastAPI(title="Scheduler Product API", description="API for the production scheduling system")
+
+# Import backend modules
 from data_loader import load_data
 from validator import validate_foreign_keys, validate_nulls
 from job_builder import build_jobs, initialize_machine_state
 from scheduler import run_scheduler, save_schedule, verify_schedule
 from kpi import compute_kpi_metrics
-import json
-
-app = FastAPI(title="Scheduler Product API", description="API for the production scheduling system")
 
 # Create directories for storing uploaded files and sessions
 UPLOAD_DIR = Path("uploads")
@@ -29,10 +30,14 @@ async def upload_files(
     machines: UploadFile = File(...),
     products: UploadFile = File(...),
     routing: UploadFile = File(...),
-    orders: UploadFile = File(...)
+    orders: UploadFile = File(...),
+    machine_calendar: UploadFile = File(None),
+    setup_matrix: UploadFile = File(None),
+    sections: UploadFile = File(None),
+    buffers: UploadFile = File(None)
 ):
     """
-    Upload the four required CSV files and validate them.
+    Upload CSV files and validate them.
     Returns a session ID for subsequent operations.
     """
     # Create a unique session ID
@@ -40,7 +45,7 @@ async def upload_files(
     session_upload_dir = UPLOAD_DIR / session_id
     session_upload_dir.mkdir(exist_ok=True)
 
-    # Save uploaded files
+    # Save required files
     file_mapping = {
         "machines": machines,
         "products": products,
@@ -52,6 +57,22 @@ async def upload_files(
         file_path = session_upload_dir / f"{name}.csv"
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+
+    # Save optional Phase 1.5 files
+    optional_mapping = {
+        "machine_calendar": machine_calendar,
+        "setup_matrix": setup_matrix,
+        "sections": sections,
+        "buffers": buffers
+    }
+
+    phase15_summary = {}
+    for name, file in optional_mapping.items():
+        if file:
+            file_path = session_upload_dir / f"{name}.csv"
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            phase15_summary[f"{name}_uploaded"] = True
 
     # Load and validate data
     try:
@@ -65,6 +86,30 @@ async def upload_files(
         validation_message = str(e)
         # Still store the data so user can see what went wrong
         data = load_data(str(session_upload_dir))
+
+    # Build phase15_summary if Phase 1.5 data exists
+    if 'machine_calendar' in data:
+        # Calculate calendar availability
+        cal = data['machine_calendar']
+        if 'is_available' in cal.columns:
+            available = cal[cal['is_available'] == 1]
+            total = len(cal)
+            phase15_summary['calendar_available'] = len(available) / total if total > 0 else 0
+            phase15_summary['machines_with_calendar'] = cal['machine_id'].nunique()
+
+    if 'setup_matrix' in data:
+        phase15_summary['setup_transitions'] = len(data['setup_matrix'])
+
+    if 'sections' in data:
+        phase15_summary['sections_count'] = len(data['sections'])
+
+    if 'buffers' in data:
+        phase15_summary['buffers_count'] = len(data['buffers'])
+
+    # Machine capacities
+    if 'machines' in data and 'capacity' in data['machines'].columns:
+        caps = data['machines'].groupby('department')['capacity'].first().to_dict()
+        phase15_summary['machines_capacity'] = caps
 
     # Store session data
     sessions[session_id] = {
@@ -83,7 +128,8 @@ async def upload_files(
     return {
         "session_id": session_id,
         "validation_passed": validation_passed,
-        "validation_message": validation_message
+        "validation_message": validation_message,
+        "phase15_summary": phase15_summary if phase15_summary else None
     }
 
 @app.post("/process/{session_id}")
@@ -116,14 +162,8 @@ async def process_workflow(session_id: str):
 
         # Save schedule
         schedule_path = session_upload_dir / "schedule.csv"
-        print(f"Saving schedule to: {schedule_path}")
-        print(f"Session upload dir: {session_upload_dir}")
-        print(f"Session upload dir exists: {session_upload_dir.exists()}")
-        save_schedule(schedule_df, schedule_path)
+        save_schedule(schedule_df, str(schedule_path))
         session["schedule_path"] = str(schedule_path)
-        print(f"Schedule saved. File exists: {schedule_path.exists()}")
-        if schedule_path.exists():
-            print(f"Schedule file size: {schedule_path.stat().st_size} bytes")
 
         # Verify schedule
         passed, errors = verify_schedule(schedule_df)

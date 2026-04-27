@@ -1,203 +1,107 @@
-# Scheduler Product Documentation
+# Scheduler Product v1.5
 
-## Overview
+A production scheduling system that processes orders through operations on machines, with support for parallel capacity, machine calendars, setup times, and WIP control.
 
-This project implements a production scheduling system that processes orders through a series of operations on various machines. The system consists of multiple Python modules that work together to load data, validate it, build job operations, schedule them based on due dates, and compute key performance indicators (KPIs).
+## Features
 
-## Module Descriptions
+### Phase 1.5 Features
+- **Parallel Capacity**: Machines can process multiple concurrent operations
+- **Machine Calendar**: Downtime-aware scheduling (prevents scheduling during unavailable periods)
+- **Setup Time**: Product transition times between operations on same machine
+- **Sections**: Machine grouping with WIP limits
+- **Buffers**: Section-based work-in-progress control
+- **Transfer Time**: Gap time between consecutive operations
 
-### 1. data_loader.py
-Loads CSV files from the 'data' folder and returns a dictionary of pandas DataFrames.
+### Core Features
+- Due-date based scheduling (earliest due date first)
+- Operation sequence enforcement per order
+- No overlapping operations on same machine (respecting capacity)
+- Schedule verification
+- KPI computation (on-time delivery, delay metrics)
+- Gantt chart visualization
 
-**Files Loaded:**
-- machines.csv: Contains machine information (machine_id, department, shift_start, shift_end)
-- products.csv: Contains product information (product_id, family, complexity)
-- routing.csv: Contains routing information (product_id, operation_seq, department, machine_id, proc_time_min)
-- orders.csv: Contains order information (order_id, product_id, quantity, order_date, due_date, priority)
+## Installation
 
-**Features:**
-- Automatically parses datetime fields: order_date, due_date
-- Returns DataFrames as a dictionary with keys: 'machines', 'products', 'routing', 'orders'
-
-### 2. validator.py
-Provides data validation functions to ensure data integrity.
-
-**Functions:**
-- `validate_foreign_keys(data)`: Checks that all product_id in orders exist in products and all machine_id in routing exist in machines
-- `validate_nulls(data)`: Checks for null values in critical fields:
-  - machine_id (in machines and routing DataFrames)
-  - product_id (in products, routing, and orders DataFrames)
-  - operation_seq (in routing DataFrame)
-  - proc_time_min (in routing DataFrame)
-
-Both functions raise ValueError with clear messages if validation fails, and pass silently for valid data.
-
-### 3. job_builder.py
-Handles job creation and machine state initialization.
-
-**Functions:**
-- `build_jobs(data)`: Joins orders with routing on product_id to create operation-level DataFrame with columns: order_id, product_id, operation_seq, machine_id, proc_time_min
-- `initialize_machine_state(data)`: Returns a dictionary mapping each machine_id to an empty list: {machine_id: []}
-
-### 4. scheduler.py
-Implements the scheduling algorithm and provides schedule verification.
-
-**Functions:**
-- `run_scheduler(data)`: Implements the scheduling algorithm based on due dates:
-  1. Sorts orders by due_date (ascending)
-  2. For each order: sets current_time = order_date
-  3. For each operation (sorted by operation_seq): 
-     - start = max(current_time, machine availability)
-     - end = start + proc_time (converted from minutes to timedelta)
-  4. Updates machine schedule
-  5. Stores result
-  Returns DataFrame with columns: order_id, operation_seq, machine_id, start, end
-  
-- `save_schedule(df_schedule)`: Saves the schedule DataBus to 'schedule.csv' with proper datetime formatting (YYYY-MM-DD HH:MM:SS)
-  
-- `verify_schedule(df_schedule)`: Verifies the schedule for two conditions:
-  1. No machine has overlapping operations
-  2. For each order, operation_seq order is respected (operations are in increasing order of operation_seq and start times are non-decreasing)
-  Returns tuple: (bool, list) where bool is True if all checks pass, False otherwise, and list contains error messages if any.
-
-### 5. kpi.py
-Computes completion times and key performance indicators.
-
-**Functions:**
-- `compute_completion(df_schedule, orders_df=None)`: 
-  - Groups schedule DataFrame by order_id
-  - Takes max(end) for each order to compute completion time
-  - If orders_df is provided, merges with orders to compute delay = completion_time - due_date (in hours)
-  - Returns DataFrame with order_id, completion_time, and optionally due_date, delay_hours
-  
-- `compute_kpi_metrics(df_schedule, orders_df)`: 
-  - Computes key performance indicators:
-    - total_orders: total number of orders
-    - on_time_orders: number of orders completed on or before due date
-    - late_orders: number of orders completed after due date
-    - avg_delay: average delay in hours (negative = early, positive = late)
-    - max_delay: maximum delay in hours
-
-### 6. main.py
-Orchestrates the complete workflow as requested:
-1. load_data()
-2. run validations
-3. build_jobs()
-4. initialize machines
-5. run_scheduler()
-6. save_schedule()
-7. compute KPIs
-8. plot_gantt()
-
-## Data Flow
-
-```
-data_loader.py → validator.py → job_builder.py → scheduler.py → kpi.py
+```bash
+pip install pandas matplotlib fastapi uvicorn
 ```
 
-The main.py file orchestrates this flow and adds visualization capabilities.
+## How to Run
 
-## Usage
+### Option 1: Web Interface (Recommended)
 
-### Running the Complete Workflow
+1. **Start the backend server:**
+   ```bash
+   python backend_api.py
+   ```
+
+2. **Open your browser:**
+   Navigate to `http://localhost:8000`
+
+3. **Upload your data files:**
+   - Required: `machines.csv`, `products.csv`, `routing.csv`, `orders.csv`
+   - Optional: `machine_calendar.csv`, `setup_matrix.csv`, `sections.csv`, `buffers.csv`
+
+### Option 2: Command Line
+
 ```bash
 python main.py
 ```
 
-This will:
-1. Load and validate the data
-2. Build job operations
-3. Initialize machine states
-4. Run the scheduling algorithm
-5. Save the schedule to schedule.csv
-6. Compute and display KPI metrics
-7. Generate and save a Gantt chart visualization as gantt_chart.png
+### Run Tests
 
-### Running Individual Components
-Each module can be tested independently:
 ```bash
-python data_loader.py   # Test data loading
-python validator.py     # Test validation
-python job_builder.py   # Test job building
-python scheduler.py     # Test scheduling and verification
-python kpi.py           # Test KPI computation
-python main.py          # Run complete workflow
+python tests/test_baseline.py
+python tests/test_calendar.py
+python tests/test_setup.py
 ```
 
-## Expected Output
+## Data Files
 
-When running main.py, you should see output similar to:
+### Core Data (`/data`)
+| File | Description |
+|------|-------------|
+| `machines.csv` | Machine info (id, department, shift, capacity) |
+| `products.csv` | Product info |
+| `routing.csv` | Operation routing (product → machine → time) |
+| `orders.csv` | Order info (product, quantities, dates) |
+
+### Phase 1.5 Data
+| File | Description |
+|------|-------------|
+| `machine_calendar.csv` | Machine availability windows |
+| `setup_matrix.csv` | Product transition setup times |
+| `sections.csv` | Section definitions |
+| `buffers.csv` | Buffer capacity per section |
+
+## Output
+- `schedule.csv` - Scheduled operations
+- `gantt_chart.png` - Visual schedule (CLI mode)
+- Web UI displays Gantt charts and KPIs (web mode)
+
+## API Endpoints (Web Mode)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/upload` | Upload CSV files |
+| POST | `/process/{session_id}` | Run scheduling workflow |
+| GET | `/status/{session_id}` | Get workflow status |
+| GET | `/data/{session_id}/{data_type}` | Get jobs/schedule/KPI data |
+| GET | `/download/{session_id}/schedule` | Download schedule.csv |
+
+## Module Overview
+
 ```
-=== Starting Production Scheduling Workflow ===
-
-1. Loading data...
-   Loaded 4 DataFrames
-   Orders: 1000 rows
-   Machines: 34 rows
-   Products: 150 rows
-   Routing: 1133 rows
-
-2. Running validations...
-   All validations passed
-
-3. Building jobs...
-   Built 7609 job operations
-   Columns: ['order_id', 'product_id', 'operation_seq', 'machine_id', 'proc_time_min']
-
-4. Initializing machine state...
-   Initialized state for 34 machines
-   Example: ('MIX_M1', [])
-
-5. Running scheduler...
-   Scheduled 7609 operations
-   Columns: ['order_id', 'operation_seq', 'machine_id', 'start', 'end']
-
-6. Saving schedule...
-   Schedule saved to schedule.csv
-
-7. Computing KPIs...
-   KPI Metrics:
-     total_orders: 1000
-     on_time_orders: 1000
-     late_orders: 0
-     avg_delay: -33.94 hours
-     max_delay: -1.47 hours
-
-8. Plotting Gantt chart...
-   Gantt chart saved as 'gantt_chart.png'
-
-=== Workflow Completed Successfully ===
+data_loader.py → validator.py → job_builder.py → scheduler.py → kpi.py
+                    ↓                              ↓
+              validation errors          verification
 ```
 
-## Output Files
+## Documentation
+- [CLAUDE.md](CLAUDE.md) - Agent documentation
+- [docs/changelog.md](docs/changelog.md) - Version history
+- [docs/algorithm_details.md](docs/algorithm_details.md) - Algorithm explanation
+- [docs/FILE_STRUCTURE.md](docs/FILE_STRUCTURE.md) - File organization
 
-After running main.py, the following files will be generated in the project directory:
-- schedule.csv: The complete schedule with columns order_id, operation_seq, machine_id, start, end
-- gantt_chart.png: A visualization of the schedule as a Gantt chart
-
-## Verification
-
-The scheduler.py module includes a verify_schedule() function that checks:
-1. No machine has overlapping operations
-2. For each order, operation_seq order is respected
-
-These checks are automatically performed when running scheduler.py or main.py, and the results are displayed in the output.
-
-## Requirements
-
-- Python 3.x
-- pandas
-- matplotlib (for Gantt chart visualization)
-
-Install requirements with:
-```bash
-pip install pandas matplotlib
-```
-
-## Notes
-
-- The scheduling algorithm prioritizes orders by due_date (earliest first)
-- For each order, operations are processed in operation_seq order
-- Machine availability is tracked to prevent overlapping operations
-- All datetime values are properly formatted in the output CSV
-- The system handles edge cases such as missing data or invalid references through validation functions
+## Version
+Current: **v1.5.0** (Phase 1.5: Stabilize Engine)

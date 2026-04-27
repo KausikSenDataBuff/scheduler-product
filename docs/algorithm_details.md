@@ -1,6 +1,6 @@
 # Algorithm Details
 
-## Scheduling Algorithm
+## Scheduling Algorithm (Phase 1.5)
 
 The scheduling algorithm implemented in `scheduler.py` follows these steps:
 
@@ -8,29 +8,57 @@ The scheduling algorithm implemented in `scheduler.py` follows these steps:
 - Orders are sorted by `due_date` in ascending order (earliest due date first)
 - This ensures that orders with earlier due dates are scheduled first
 
-### 2. Machine Availability Tracking
-- Each machine's availability is tracked using a dictionary: `machine_available[machine_id] = timestamp`
-- Initially, all machines are available at `pd.Timestamp.min` (effectively time zero)
-- After scheduling an operation on a machine, the machine's availability is updated to the end time of that operation
+### 2. Machine State Tracking (Phase 1.5)
+Each machine maintains multiple state variables:
+
+```python
+machine_intervals[machine_id] = [(start1, end1), (start2, end2), ...]  # Active intervals
+machine_capacity[machine_id] = N  # Concurrent operation capacity (from machines.csv)
+last_product[machine_id] = product_id  # For setup time calculation
+```
 
 ### 3. Operation Scheduling
 For each order (in due date order):
 - Set `current_time = order_date` (the earliest time this order can start)
 - For each operation in the order (sorted by `operation_seq`):
-  - Get the machine's next available time: `avail_time = machine_available[machine_id]`
-  - Calculate start time: `start_time = max(current_time, avail_time)`
-    - This ensures the operation starts when both:
-      1. The order is ready (`current_time`)
-      2. The machine is available (`avail_time`)
-  - Calculate end time: `end_time = start_time + proc_time_min` (converted to timedelta)
-  - Record the scheduled operation
-  - Update machine availability: `machine_available[machine_id] = end_time`
-  - Update current_time for next operation: `current_time = end_time`
+  - Adjust for calendar availability: `current_time = adjust_to_calendar(machine_id, current_time)`
+  - Add setup time if transitioning products: `current_time += setup_time`
+  - Find slot: `start_time, end_time = get_earliest_slot(intervals, capacity, current_time, duration)`
+  - Adjust end for calendar: `end_time = adjust_to_calendar(machine_id, end_time)`
+  - Record operation and update machine state
 
-### 4. Key Properties
-- **No overlapping operations on the same machine**: By tracking machine availability and updating it after each operation, we ensure that no two operations on the same machine overlap in time.
-- **Operation sequence order respected**: For each order, we process operations in increasing `operation_seq` order, and set `current_time` to the end time of the previous operation, ensuring that each operation starts after the previous one ends.
-- **Orders start at or after their order date**: By initializing `current_time = order_date` for each order, we ensure that no operation in an order starts before the order date.
+### 4. Key Scheduling Functions
+
+#### get_earliest_slot()
+Finds earliest slot that fits within capacity constraints:
+```python
+def get_earliest_slot(machine_intervals, machine_capacity, current_time, duration):
+    # Count overlapping intervals at candidate position
+    # If overlapping < capacity, slot is available
+    # Otherwise, slide to when earliest overlapping op ends
+```
+
+#### adjust_to_calendar()
+Shifts time to next available window if in downtime:
+```python
+def adjust_to_calendar(machine_id, time, calendar_df):
+    # If time falls in is_available=0 window, return window end
+    # Otherwise return original time
+```
+
+#### get_setup_time()
+O(1) lookup from pre-indexed dict:
+```python
+def get_setup_time(machine_id, from_product, to_product, setup_dict):
+    return setup_dict.get((machine_id, from_product, to_product), 0)
+```
+
+### 5. Key Properties
+- **No overlapping operations beyond capacity**: By tracking all active intervals and checking overlap count, we enforce capacity limits.
+- **Calendar-aware**: Operations never scheduled during `is_available=0` periods.
+- **Setup time respected**: Product transitions incur setup time per `setup_matrix.csv`.
+- **Operation sequence order respected**: For each order, we process operations in increasing `operation_seq` order.
+- **Orders start at or after their order date**: By initializing `current_time = order_date` for each order.
 
 ## Data Validation
 

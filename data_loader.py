@@ -4,14 +4,15 @@ import os
 def load_data(data_dir=None):
     """
     Load CSV files from the data folder and return a dictionary of DataFrames.
-    Parses datetime fields: order_date, due_date.
+    Parses datetime fields: order_date, due_date, start_time, end_time.
 
     Parameters:
         data_dir (str, optional): The directory containing the CSV files.
                                   If not provided, uses the 'data' folder in the same directory as this script.
 
     Returns:
-        dict: Dictionary of DataFrames with keys 'machines', 'products', 'routing', 'orders'.
+        dict: Dictionary of DataFrames with keys 'machines', 'products', 'routing', 'orders',
+              and optionally 'machine_calendar', 'setup_matrix', 'sections', 'buffers'.
     """
     if data_dir is None:
         data_dir = os.path.join(os.path.dirname(__file__), 'data')
@@ -22,6 +23,14 @@ def load_data(data_dir=None):
         'products': 'products.csv',
         'routing': 'routing.csv',
         'orders': 'orders.csv'
+    }
+
+    # Optional files
+    optional_files = {
+        'machine_calendar': 'machine_calendar.csv',
+        'setup_matrix': 'setup_matrix.csv',
+        'sections': 'sections.csv',
+        'buffers': 'buffers.csv'
     }
 
     # Dictionary to hold DataFrames
@@ -41,6 +50,17 @@ def load_data(data_dir=None):
                     df[col] = pd.to_datetime(df[col], errors='coerce')
 
         dataframes[key] = df
+
+    # Load optional files if they exist
+    for key, filename in optional_files.items():
+        file_path = os.path.join(data_dir, filename)
+        if os.path.exists(file_path):
+            df = pd.read_csv(file_path)
+            # Parse datetime fields for machine_calendar
+            if key == 'machine_calendar':
+                df['start_time'] = pd.to_datetime(df['start_time'], errors='coerce')
+                df['end_time'] = pd.to_datetime(df['end_time'], errors='coerce')
+            dataframes[key] = df
 
     return dataframes
 

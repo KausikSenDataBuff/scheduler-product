@@ -36,6 +36,160 @@ header p {
     opacity: 0.9;
 }
 
+.version-badge {
+    background: rgba(255,255,255,0.2);
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 1rem;
+    vertical-align: middle;
+}
+
+/* Phase 1.5 Features Section */
+.features-section {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 25px;
+}
+
+.features-section h2 {
+    color: white;
+    border-left-color: rgba(255,255,255,0.5);
+    margin-bottom: 15px;
+}
+
+.features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 15px;
+}
+
+.feature-card {
+    background: rgba(255,255,255,0.1);
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.feature-icon {
+    font-size: 2rem;
+    display: block;
+    margin-bottom: 10px;
+}
+
+.feature-card h3 {
+    font-size: 1rem;
+    margin-bottom: 8px;
+}
+
+.feature-card p {
+    font-size: 0.85rem;
+    opacity: 0.9;
+    margin: 0;
+}
+
+/* Optional files styling */
+.optional-header {
+    color: #7f8c8d;
+    font-size: 1rem;
+    margin-top: 20px;
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+.file-upload-grid.optional {
+    opacity: 0.8;
+}
+
+.file-upload-grid.optional .file-group {
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 5px;
+}
+
+.required {
+    color: #e74c3c;
+}
+
+/* Phase 1.5 Info Section */
+.phase15-info-section {
+    background: #f0f7ff;
+}
+
+.phase15-info-section h2 {
+    border-left-color: #667eea;
+}
+
+.phase15-info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+}
+
+.phase15-info-card {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.phase15-info-card h4 {
+    color: #667eea;
+    margin-bottom: 10px;
+    font-size: 0.9rem;
+}
+
+.phase15-info-card p {
+    margin: 5px 0;
+    font-size: 0.9rem;
+}
+
+/* KPI Cards */
+.kpi-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 15px;
+}
+
+.kpi-card {
+    display: flex;
+    align-items: center;
+    padding: 15px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.kpi-icon {
+    font-size: 1.8rem;
+    margin-right: 15px;
+}
+
+.kpi-content {
+    flex: 1;
+}
+
+.kpi-label {
+    font-size: 0.85rem;
+    color: #7f8c8d;
+}
+
+.kpi-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #2c3e50;
+}
+
+/* Success/Error messages */
+.success-message {
+    color: #2ecc71;
+    font-weight: 600;
+}
+
+.error-message {
+    color: #e74c3c;
+    font-weight: 600;
+}
+
 main {
     background: white;
     border-radius: 10px;
