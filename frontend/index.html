@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scheduler Product - Production Scheduling System</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Scheduler Product</h1>
+            <p>Production Scheduling System</p>
+        </header>
+
+        <main>
+            <!-- Progress Tracker -->
+            <section class="progress-section" id="progress-section">
+                <h2>Workflow Progress</h2>
+                <div class="progress-tracker">
+                    <div class="step" id="step-upload">⬜ Upload</div>
+                    <div class="step" id="step-validation">⬜ Validation</div>
+                    <div class="step" id="step-jobs">⬜ Job Building</div>
+                    <div class="step" id="step-scheduling">⬜ Scheduling</div>
+                    <div class="step" id="step-verification">⬜ Verification</div>
+                    <div class="step" id="step-kpi">⬜ KPI Calculation</div>
+                    <div class="step" id="step-visualization">⬜ Visualization</div>
+                </div>
+                <div id="status-message" class="status-message"></div>
+            </section>
+
+            <!-- File Upload Section -->
+            <section class="upload-section" id="upload-section">
+                <h2>1. Upload Data Files</h2>
+                <div class="file-upload-grid">
+                    <div class="file-group">
+                        <label for="machines-file">machines.csv</label>
+                        <input type="file" id="machines-file" accept=".csv" required>
+                        <small>Machine information</small>
+                    </div>
+                    <div class="file-group">
+                        <label for="products-file">products.csv</label>
+                        <input type="file" id="products-file" accept=".csv" required>
+                        <small>Product information</small>
+                    </div>
+                    <div class="file-group">
+                        <label for="routing-file">routing.csv</label>
+                        <input type="file" id="routing-file" accept=".csv" required>
+                        <small>Routing information</small>
+                    </div>
+                    <div class="file-group">
+                        <label for="orders-file">orders.csv</label>
+                        <input type="file" id="orders-file" accept=".csv" required>
+                        <small>Order information</small>
+                    </div>
+                </div>
+                <div class="upload-buttons">
+                    <button id="upload-btn" class="primary-btn">Upload and Validate</button>
+                    <button id="next-btn" class="primary-btn" disabled>Next Step →</button>
+                </div>
+            </section>
+
+            <!-- Validation Results -->
+            <section class="validation-section" id="validation-section">
+                <h2>2. Data Validation</h2>
+                <div id="validation-results" class="results-container">
+                    <p>Please upload files to see validation results.</p>
+                </div>
+            </section>
+
+            <!-- Job Building Results -->
+            <section class="jobs-section" id="jobs-section">
+                <h2>3. Job Building</h2>
+                <div id="jobs-results" class="results-container">
+                    <p>Please upload and validate files to see job building results.</p>
+                </div>
+            </section>
+
+            <!-- Scheduling Results -->
+            <section class="scheduling-section" id="scheduling-section">
+                <h2>4. Scheduling</h2>
+                <div id="scheduling-results" class="results-container">
+                    <p>Please upload and validate files to see scheduling results.</p>
+                </div>
+            </section>
+
+            <!-- Verification Results -->
+            <section class="verification-section" id="verification-section">
+                <h2>5. Schedule Verification</h2>
+                <div id="verification-results" class="results-container">
+                    <p>Please upload and validate files to see verification results.</p>
+                </div>
+            </section>
+
+            <!-- KPI Results -->
+            <section class="kpi-section" id="kpi-section">
+                <h2>6. Key Performance Indicators</h2>
+                <div id="kpi-results" class="results-container">
+                    <p>Please upload and validate files to see KPI results.</p>
+                </div>
+            </section>
+
+            <!-- Visualization -->
+            <section class="visualization-section" id="visualization-section">
+                <h2>7. Schedule Visualization</h2>
+                <div class="chart-tabs">
+                    <button class="chart-tab active" data-chart="machine">Machine Gantt</button>
+                    <button class="chart-tab" data-chart="order">Order Gantt</button>
+                </div>
+                <div class="chart-container" id="machine-gantt-container">
+                    <canvas id="gantt-chart" width="800" height="400"></canvas>
+                </div>
+                <div class="chart-container" id="order-gantt-container" style="display: none;">
+                    <canvas id="order-gantt-chart" width="800" height="400"></canvas>
+                </div>
+                <div class="chart-controls">
+                    <button id="download-chart-btn" class="secondary-btn">Download Chart as PNG</button>
+                </div>
+            </section>
+
+            <!-- Actions -->
+            <section class="actions-section">
+                <button id="download-schedule-btn" class="secondary-btn">Download Schedule (CSV)</button>
+                <button id="reset-btn" class="secondary-btn">Reset and Start Over</button>
+            </section>
+        </main>
+
+        <footer>
+            <p>Scheduler Product - Production Scheduling System</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

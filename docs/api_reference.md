@@ -1,0 +1,356 @@
+# API Reference
+
+## data_loader.py
+
+### load_data()
+Loads CSV files from the 'data' folder and returns a dictionary of pandas DataFrames.
+
+**Parameters:** None
+
+**Returns:**
+- dict: Dictionary with keys:
+  - 'machines': DataFrame with columns [machine_id, department, shift_start, shift_end]
+  - 'products': DataFrame with columns [product_id, family, complexity]
+  - 'routing': DataFrame with columns [product_id, operation_seq, department, machine_id, proc_time_min]
+  - 'orders': DataFrame with columns [order_id, product_id, quantity, order_date, due_date, priority]
+  
+  The 'order_date' and 'due_date' columns are parsed as datetime objects.
+
+**Example:**
+```python
+from data_loader import load_data
+data = load_data()
+print(data['orders'].head())
+```
+
+## validator.py
+
+### validate_foreign_keys(data)
+Validates foreign key relationships in the loaded data.
+
+**Parameters:**
+- data (dict): Dictionary of DataFrames with keys 'machines', 'products', 'routing', 'orders'
+
+**Returns:** None
+
+**Raises:**
+- ValueError: If any foreign key constraint is violated with a clear message
+
+**Checks:**
+- All product_id in orders exist in products
+- All machine_id in routing exist in machines
+
+**Example:**
+```python
+from validator import validate_foreign_keys
+validate_foreign_keys(data)  # Raises ValueError if validation fails
+```
+
+### validate_nulls(data)
+Validates that critical fields contain no null values.
+
+**Parameters:**
+- data (dict): Dictionary of DataFrames with keys 'machines', 'products', 'routing', 'orders'
+
+**Returns:** None
+
+**Raises:**
+- ValueError: If any null values are found in critical fields with a clear message
+
+**Checks:**
+- machine_id (in machines and routing DataFrames)
+- product_id (in products, routing, and orders DataFrames)
+- operation_seq (in routing DataFrame)
+- proc_time_min (in routing DataFrame)
+
+**Example:**
+```python
+from validator import validate_nulls
+validate_nulls(data)  # Raises ValueError if validation fails
+```
+
+## job_builder.py
+
+### build_jobs(data)
+Builds operation-level jobs by joining orders with routing on product_id.
+
+**Parameters:**
+- data (dict): Dictionary of DataFrames with keys 'orders' and 'routing'
+
+**Returns:**
+- pandas.DataFrame: DataFrame with columns:
+  - order_id
+  - product_id
+  - operation_seq
+  - machine_id
+  - proc_time_min
+
+**Example:**
+```python
+from job_builder import build_jobs
+jobs_df = build_jobs(data)
+```
+
+### initialize_machine_state(data)
+Initializes machine state with empty job lists for each machine.
+
+**Parameters:**
+- data (dict): Dictionary of DataFrames with key 'machines'
+
+**Returns:**
+- dict: Dictionary mapping machine_id to an empty list of jobs
+  Format: {machine_id: []}
+
+**Example:**
+```python
+from job_builder import initialize_machine_state
+machine_state = initialize_machine_state(data)
+```
+
+## scheduler.py
+
+### run_scheduler(data)
+Runs a simple scheduling algorithm based on order due dates.
+
+**Parameters:**
+- data (dict): Dictionary of DataFrames with keys:
+  - 'orders'
+  - 'routing'
+  - 'machines'
+
+**Returns:**
+- pandas.DataFrame: DataFrame with columns:
+  - order_id
+  - operation_seq
+  - machine_id
+  - start (Timestamp)
+  - end (Timestamp)
+
+**Algorithm:**
+1. Sort orders by due_date (ascending)
+2. For each order: current_time = order_date
+3. For each operation:
+   - start = max(current_time, machine availability)
+   - end = start + proc_time
+   - Update machine schedule
+   - Store result
+
+**Example:**
+```python
+from scheduler import run_scheduler
+schedule_df = run_scheduler(data)
+```
+
+### save_schedule(df_schedule)
+Saves the schedule DataFrame to a CSV file named 'schedule.csv'.
+
+**Parameters:**
+- df_schedule (pandas.DataFrame): DataFrame with columns:
+  - order_id
+  - operation_seq
+  - machine_id
+  - start
+  - end
+  where start and end are Timestamps.
+
+**Returns:** None
+
+**Effects:**
+- Creates/overwrites 'schedule.csv' in the current directory
+- Converts timestamp columns to string format: YYYY-MM-DD HH:MM:SS
+
+**Example:**
+```python
+from scheduler import save_schedule
+save_schedule(schedule_df)
+```
+
+### verify_schedule(df_schedule)
+Verifies the schedule for correctness.
+
+**Parameters:**
+- df_schedule (pandas.DataFrame): DataFrame with columns:
+  - order_id
+  - operation_seq
+  - machine_id
+  - start
+  - end
+  where start and end are Timestamps or strings in datetime format.
+
+**Returns:**
+- tuple: (bool, list) where:
+  - bool: True if all checks pass, False otherwise
+  - list: Error messages if any (empty list if all checks pass)
+
+**Checks:**
+1. No machine has overlapping operations
+2. For each order, operation_seq order is respected (operations are in increasing order of operation_seq and start times are non-decreasing)
+
+**Example:**
+```python
+from scheduler import verify_schedule
+passed, errors = verify_schedule(schedule_df)
+if passed:
+    print("Schedule is valid")
+else:
+    print("Schedule has errors:", errors)
+```
+
+## kpi.py
+
+### compute_completion(df_schedule, orders_df=None)
+Computes the completion time for each order by taking the maximum end time.
+
+**Parameters:**
+- df_schedule (pandas.DataFrame): DataFrame with columns:
+  - order_id
+  - operation_seq
+  - machine_id
+  - start
+  - end
+  where start and end are Timestamps or strings in datetime format.
+- orders_df (pandas.DataFrame, optional): DataFrame with order information, must contain
+  'order_id' and 'due_date' columns.
+
+**Returns:**
+- pandas.DataFrame:
+  - If orders_df is None:
+    DataFrame with columns: order_id, completion_time
+  - If orders_df is provided:
+    DataFrame with columns: order_id, completion_time, due_date, delay_hours
+    where delay_hours is a float representing the delay in hours
+    (completion_time - due_date).
+
+**Example:**
+```python
+from kpi import compute_completion
+# Without delay calculation
+completion_df = compute_completion(schedule_df)
+# With delay calculation
+delay_df = compute_completion(schedule_df, orders_df)
+```
+
+### compute_kpi_metrics(df_schedule, orders_df)
+Computes key performance indicators from the schedule and orders data.
+
+**Parameters:**
+- df_schedule (pandas.DataFrame): DataFrame with columns:
+  - order_id
+  - operation_seq
+  - machine_id
+  - start
+  - end
+- orders_df (pandas.DataFrame): DataFrame with order information, must contain
+  'order_id' and 'due_date' columns.
+
+**Returns:**
+- dict: Dictionary containing KPI metrics:
+  - total_orders: total number of orders
+  - on_time_orders: number of orders completed on or before due date
+  - late_orders: number of orders completed after due date
+  - avg_delay: average delay in hours (negative = early, positive = late)
+  - max_delay: maximum delay in hours
+
+**Example:**
+```python
+from kpi import compute_kpi_metrics
+kpi_metrics = compute_kpi_metrics(schedule_df, data['orders'])
+print(f"Total orders: {kpi_metrics['total_orders']}")
+print(f"Average delay: {kpi_metrics['avg_delay']:.2f} hours")
+```
+
+## main.py
+
+### main()
+Orchestrates the complete workflow as requested.
+
+**Steps Executed:**
+1. load_data()
+2. Run validations (validate_foreign_keys, validate_nulls)
+3. build_jobs()
+4. initialize machines (initialize_machine_state)
+5. run_scheduler()
+6. save_schedule()
+7. compute KPIs (compute_kpi_metrics)
+8. plot_gantt()
+
+**Returns:** int (exit code: 0 for success, 1 for error)
+
+**Example:**
+```bash
+python main.py
+```
+
+**Output Files:**
+- schedule.csv: The complete schedule
+- gantt_chart.png: Gantt chart visualization of the schedule
+
+**Example:**
+```python
+from main import main
+exit_code = main()
+```
+
+## Usage Examples
+
+### Basic Usage
+```python
+# Load data
+from data_loader import load_data
+data = load_data()
+
+# Validate data
+from validator import validate_foreign_keys, validate_nulls
+validate_foreign_keys(data)
+validate_nulls(data)
+
+# Build jobs
+from job_builder import build_jobs, initialize_machine_state
+jobs_df = build_jobs(data)
+machine_state = initialize_machine_state(data)
+
+# Run scheduler
+from scheduler import run_scheduler, save_schedule
+schedule_df = run_scheduler(data)
+save_schedule(schedule_df)
+
+# Compute KPIs
+from kpi import compute_kpi_metrics
+kpi_metrics = compute_kpi_metrics(schedule_df, data['orders'])
+
+# Or use main.py to run everything
+from main import main
+main()
+```
+
+### Custom Workflow
+```python
+# Load and validate data
+from data_loader import load_data
+from validator import validate_foreign_keys, validate_nulls
+data = load_data()
+validate_foreign_keys(data)
+validate_nulls(data)
+
+# Build jobs
+from job_builder import build_jobs
+jobs_df = build_jobs(data)
+
+# Initialize machines
+from job_builder import initialize_machine_state
+machine_state = initialize_machine_state(data)
+
+# Run custom scheduling logic (if needed)
+# ... custom code here ...
+
+# Use standard scheduler for comparison
+from scheduler import run_scheduler
+schedule_df = run_scheduler(data)
+
+# Calculate custom metrics
+# ... custom KPI code here ...
+
+# Or use standard KPI functions
+from kpi import compute_kpi_metrics
+kpi_metrics = compute_kpi_metrics(schedule_df, data['orders'])
+```
