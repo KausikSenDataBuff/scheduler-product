@@ -289,10 +289,10 @@ def save_schedule(df_schedule, file_path='schedule.csv'):
     print(f"File exists after save: {os.path.exists(str(file_path))}")
 
 
-def verify_schedule(df_schedule):
+def verify_schedule(df_schedule, machines_df=None):
     """
     Verify the schedule for two conditions:
-    1. No machine has overlapping operations.
+    1. No machine has overlapping operations beyond its capacity.
     2. For each order, operation_seq order is respected (i.e., operations are in increasing order of operation_seq
        and start times are non-decreasing).
 
@@ -300,6 +300,8 @@ def verify_schedule(df_schedule):
         df_schedule (pandas.DataFrame): DataFrame with columns:
                                         order_id, operation_seq, machine_id, start, end
                                         where start and end are Timestamps or strings in datetime format.
+        machines_df (pandas.DataFrame, optional): DataFrame with machine_id and capacity columns.
+                                                  If not provided, capacity defaults to 1 for all machines.
 
     Returns:
         tuple: (bool, list) where bool is True if all checks pass, False otherwise,
@@ -315,27 +317,72 @@ def verify_schedule(df_schedule):
     if not pd.api.types.is_datetime64_any_dtype(df['end']):
         df['end'] = pd.to_datetime(df['end'])
 
+    # Build machine capacity dict (default to 1 if not provided)
+    machine_capacity = {}
+    if machines_df is not None:
+        for _, row in machines_df.iterrows():
+            machine_id = row['machine_id']
+            cap = int(row.get('capacity', 1)) if 'capacity' in row.index else 1
+            machine_capacity[machine_id] = cap
+    else:
+        # Default capacity of 1 for all machines if machines_df not provided
+        for machine_id in df['machine_id'].unique():
+            machine_capacity[machine_id] = 1
+
     errors = []
 
-    # Check 1: No machine has overlapping operations
+    # Check 1: No machine has overlapping operations beyond capacity
     for machine_id, group in df.groupby('machine_id'):
-        # Sort by start time
+        capacity = machine_capacity.get(machine_id, 1)
         group_sorted = group.sort_values('start')
-        # Check that each operation starts after or at the same time as the previous one ends
-        prev_end = None
+        intervals = []
         for _, row in group_sorted.iterrows():
-            if prev_end is not None and row['start'] < prev_end:
-                errors.append(
-                    f"Machine {machine_id}: overlapping operations. "
-                    f"Operation at {row['start']} (order {row['order_id']}, seq {row['operation_seq']}) "
-                    f"starts before previous operation ended at {prev_end} "
-                    f"(order {prev_order_id}, seq {prev_op_seq})."
-                )
-                # Break early for this machine to avoid too many messages
-                break
-            prev_end = row['end']
-            prev_order_id = row['order_id']
-            prev_op_seq = row['operation_seq']
+            intervals.append({
+                'start': row['start'],
+                'end': row['end'],
+                'order_id': row['order_id'],
+                'operation_seq': row['operation_seq']
+            })
+
+        # Check for capacity violations by finding maximum concurrent operations
+        # Collect all start and end times, then count active operations at each point
+        time_points = []
+        for interval in intervals:
+            time_points.append((interval['start'], 'start', interval))
+            time_points.append((interval['end'], 'end', interval))
+
+        # Sort by time, with 'end' before 'start' at same timestamp to handle half-open intervals
+        time_points.sort(key=lambda x: (x[0], 0 if x[1] == 'end' else 1))
+
+        max_concurrent = 0
+        current_concurrent = 0
+        violation_time = None
+        violation_interval = None
+
+        for time, event_type, interval in time_points:
+            if event_type == 'start':
+                current_concurrent += 1
+                if current_concurrent > max_concurrent:
+                    max_concurrent = current_concurrent
+                    violation_time = time
+                    violation_interval = interval
+            else:
+                current_concurrent -= 1
+
+        if max_concurrent > capacity:
+            # Find which operations were active at the violation time
+            active_ops = []
+            for interval in intervals:
+                if interval['start'] <= violation_time < interval['end']:
+                    active_ops.append(f"{interval['order_id']} seq {interval['operation_seq']}")
+
+            errors.append(
+                f"Machine {machine_id} (capacity={capacity}): capacity exceeded. "
+                f"At {violation_time}, {max_concurrent} operations are running (exceeds capacity {capacity}). "
+                f"Active: {', '.join(active_ops)}"
+            )
+            # Break early for this machine to avoid too many messages
+            break
 
     # Check 2: For each order, operation_seq order is respected
     for order_id, group in df.groupby('order_id'):
@@ -397,7 +444,7 @@ if __name__ == "__main__":
 
         # Verify the schedule
         print("\nVerifying schedule...")
-        passed, errors = verify_schedule(schedule_df)
+        passed, errors = verify_schedule(schedule_df, machines_df)
         if passed:
             print("   PASS: Schedule verification passed: no overlaps and operation_seq order respected.")
         else:

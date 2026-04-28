@@ -94,6 +94,17 @@ def validate_nulls(data):
         null_count = routing_df['proc_time_min'].isnull().sum()
         errors.append(f"Found {null_count} null values in proc_time_min column of routing DataFrame")
 
+    # Check capacity in machines (should be positive integer)
+    if 'capacity' in machines_df.columns:
+        if not machines_df['capacity'].notnull().all():
+            null_count = machines_df['capacity'].isnull().sum()
+            errors.append(f"Found {null_count} null values in capacity column of machines DataFrame")
+        if (machines_df['capacity'] < 1).any():
+            invalid = machines_df[machines_df['capacity'] < 1]['machine_id'].tolist()
+            errors.append(f"Machine(s) with invalid capacity (< 1): {invalid}")
+    else:
+        errors.append("machines.csv is missing 'capacity' column (required for Phase 1.5+)")
+
     if errors:
         raise ValueError("\n".join(errors))
 

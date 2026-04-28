@@ -132,7 +132,7 @@ def main():
 
     # Step 7: Verify schedule
     print("7. Verifying schedule correctness...")
-    passed, errors = verify_schedule(schedule_df)
+    passed, errors = verify_schedule(schedule_df, data['machines'])
     if passed:
         print("   PASS: Schedule verification passed:")
         print("     - No machine has overlapping operations (respecting capacity)")

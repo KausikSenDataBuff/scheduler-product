@@ -166,7 +166,7 @@ async def process_workflow(session_id: str):
         session["schedule_path"] = str(schedule_path)
 
         # Verify schedule
-        passed, errors = verify_schedule(schedule_df)
+        passed, errors = verify_schedule(schedule_df, data['machines'])
         session["verification_passed"] = passed
         session["verification_errors"] = errors
 
