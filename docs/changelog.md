@@ -2,6 +2,46 @@
 
 ## [Unreleased]
 
+## Version 1.5.2 - 2026-04-28
+### Capacity-Aware Verification
+
+#### Bug Fixes
+- **verify_schedule()**: Fixed overlap detection for machines with capacity > 1
+  - Previously counted pairwise overlaps (incorrectly flagging valid schedules)
+  - Now correctly checks actual maximum concurrency at any point in time
+  - Machines with capacity=2 can have up to 2 operations overlapping legitimately
+
+- **validator.py**: Added capacity validation to `validate_nulls()`
+  - Checks for null values in capacity column
+  - Validates capacity >= 1
+  - Ensures capacity column exists (required for Phase 1.5+)
+
+#### Modified Files
+- `scheduler.py` - Updated `verify_schedule()` to accept `machines_df` parameter and properly check capacity
+- `backend_api.py` - Updated to pass `machines_df` to `verify_schedule()`
+- `docs/example_usage.py` - Updated to pass `machines_df` to `verify_schedule()`
+- `validator.py` - Added capacity validation in `validate_nulls()`
+
+#### Verification Logic Fix
+Before: An operation was flagged if it overlapped with any other operation
+```
+ORD_00610 (05:54-06:25) flagged as overlapping with 3 others
+  - ORD_00364 (05:44-06:11) - overlaps at 05:54-06:11
+  - ORD_00446 (06:15-06:37) - overlaps at 06:15-06:25
+  - ORD_00110 (06:25-07:03) - overlaps at 06:25
+```
+This was WRONG - at no point were 3 operations running simultaneously.
+
+After: Correctly checks maximum concurrent operations at any point in time
+```
+At 05:54-06:11: 2 operations (ORD_00364 + ORD_00610) - OK for capacity=2
+At 06:15-06:25: 2 operations (ORD_00610 + ORD_00446) - OK for capacity=2
+At 06:25-06:37: 2 operations (ORD_00446 + ORD_00110) - OK for capacity=2
+No capacity violation detected.
+```
+
+---
+
 ## Version 1.5.1 - 2026-04-28
 ### Frontend-Backend Alignment
 

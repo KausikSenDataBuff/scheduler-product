@@ -23,7 +23,7 @@ A production scheduling system that processes orders through operations on machi
 ## Installation
 
 ```bash
-pip install pandas matplotlib fastapi uvicorn
+pip install pandas matplotlib fastapi uvicorn python-multipart
 ```
 
 ## How to Run
@@ -104,4 +104,4 @@ data_loader.py → validator.py → job_builder.py → scheduler.py → kpi.py
 - [docs/FILE_STRUCTURE.md](docs/FILE_STRUCTURE.md) - File organization
 
 ## Version
-Current: **v1.5.0** (Phase 1.5: Stabilize Engine)
+Current: **v1.5.2** (Capacity-Aware Verification)

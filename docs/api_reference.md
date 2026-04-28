@@ -62,6 +62,10 @@ Validates that critical fields contain no null values.
 - product_id (in products, routing, and orders DataFrames)
 - operation_seq (in routing DataFrame)
 - proc_time_min (in routing DataFrame)
+- capacity (in machines DataFrame, Phase 1.5+):
+  - Null values in capacity column
+  - Capacity values < 1
+  - Missing capacity column
 
 **Example:**
 ```python
@@ -165,8 +169,8 @@ from scheduler import save_schedule
 save_schedule(schedule_df)
 ```
 
-### verify_schedule(df_schedule)
-Verifies the schedule for correctness.
+### verify_schedule(df_schedule, machines_df=None)
+Verifies the schedule for correctness, respecting machine capacity.
 
 **Parameters:**
 - df_schedule (pandas.DataFrame): DataFrame with columns:
@@ -176,6 +180,8 @@ Verifies the schedule for correctness.
   - start
   - end
   where start and end are Timestamps or strings in datetime format.
+- machines_df (pandas.DataFrame, optional): DataFrame with machine_id and capacity columns.
+  If not provided, capacity defaults to 1 for all machines.
 
 **Returns:**
 - tuple: (bool, list) where:
@@ -183,13 +189,24 @@ Verifies the schedule for correctness.
   - list: Error messages if any (empty list if all checks pass)
 
 **Checks:**
-1. No machine has overlapping operations
+1. No machine exceeds its capacity (checks actual maximum concurrency at any point in time)
+   - For each machine, counts active operations at each point in time
+   - Flags error only if max concurrent > machine capacity
 2. For each order, operation_seq order is respected (operations are in increasing order of operation_seq and start times are non-decreasing)
+
+**Capacity Handling:**
+- With capacity=1 (default): No two operations can overlap on the same machine
+- With capacity=2: Up to 2 operations can overlap legitimately
+- The check properly handles interleaved overlaps (e.g., A-B-C where A overlaps with B, B overlaps with C, but A does not overlap with C)
 
 **Example:**
 ```python
 from scheduler import verify_schedule
+# Basic usage (capacity defaults to 1)
 passed, errors = verify_schedule(schedule_df)
+
+# With capacity information (Phase 1.5+)
+passed, errors = verify_schedule(schedule_df, data['machines'])
 if passed:
     print("Schedule is valid")
 else:
