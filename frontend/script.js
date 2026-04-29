@@ -304,43 +304,93 @@ class SchedulerApp {
             return;
         }
 
-        let tableHTML = `
-            <table class="results-table">
-                <thead>
-                    <tr>
-                        <th>Order ID</th>
-                        <th>Product ID</th>
-                        <th>Operation Seq</th>
-                        <th>Machine ID</th>
-                        <th>Proc Time (min)</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
+        // Check if Phase 2 format (candidate_machines) or Phase 1 format
+        const isPhase2 = jobsData[0].candidate_machines !== undefined;
 
-        const displayData = jobsData.slice(0, 10);
-        displayData.forEach(job => {
-            tableHTML += `
-                <tr>
-                    <td>${job.order_id}</td>
-                    <td>${job.product_id}</td>
-                    <td>${job.operation_seq}</td>
-                    <td>${job.machine_id}</td>
-                    <td>${job.proc_time_min}</td>
-                </tr>
+        if (isPhase2) {
+            // Phase 2 format: show candidate machines info
+            let tableHTML = `
+                <table class="results-table">
+                    <thead>
+                        <tr>
+                            <th>Order ID</th>
+                            <th>Product ID</th>
+                            <th>Operation Seq</th>
+                            <th>Candidate Machines</th>
+                            <th>Primary Machine</th>
+                        </tr>
+                    </thead>
+                    <tbody>
             `;
-        });
 
-        tableHTML += `
-                </tbody>
-            </table>
-        `;
+            const displayData = jobsData.slice(0, 10);
+            displayData.forEach(job => {
+                const candidates = job.candidate_machines;
+                const primaryMachine = candidates.find(c => c.is_primary) || candidates[0];
+                const altCount = candidates.filter(c => !c.is_primary).length;
+                const machineList = candidates.map(c => c.machine_id).join(', ');
 
-        if (jobsData.length > 10) {
-            tableHTML += `<p><em>Showing first 10 of ${jobsData.length} jobs</em></p>`;
+                tableHTML += `
+                    <tr>
+                        <td>${job.order_id}</td>
+                        <td>${job.product_id}</td>
+                        <td>${job.operation_seq}</td>
+                        <td title="${machineList}">${candidates.length} ${altCount > 0 ? `(+${altCount} alternate)` : ''}</td>
+                        <td>${primaryMachine.machine_id} (${primaryMachine.proc_time}min${primaryMachine.efficiency !== 1.0 ? `, eff: ${primaryMachine.efficiency}` : ''})</td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += `
+                    </tbody>
+                </table>
+            `;
+
+            if (jobsData.length > 10) {
+                tableHTML += `<p><em>Showing first 10 of ${jobsData.length} operations</em></p>`;
+            }
+
+            container.innerHTML = tableHTML;
+        } else {
+            // Phase 1 format: individual machine assignment
+            let tableHTML = `
+                <table class="results-table">
+                    <thead>
+                        <tr>
+                            <th>Order ID</th>
+                            <th>Product ID</th>
+                            <th>Operation Seq</th>
+                            <th>Machine ID</th>
+                            <th>Proc Time (min)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            const displayData = jobsData.slice(0, 10);
+            displayData.forEach(job => {
+                tableHTML += `
+                    <tr>
+                        <td>${job.order_id}</td>
+                        <td>${job.product_id}</td>
+                        <td>${job.operation_seq}</td>
+                        <td>${job.machine_id}</td>
+                        <td>${job.proc_time_min}</td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += `
+                    </tbody>
+                </table>
+            `;
+
+            if (jobsData.length > 10) {
+                tableHTML += `<p><em>Showing first 10 of ${jobsData.length} operations</em></p>`;
+            }
+
+            container.innerHTML = tableHTML;
         }
-
-        container.innerHTML = tableHTML;
     }
 
     displaySchedule(scheduleData) {
@@ -397,6 +447,8 @@ class SchedulerApp {
         }
 
         let cardsHTML = '<div class="kpi-cards">';
+
+        // Phase 1 KPIs
         const kpiItems = [
             { label: 'Total Orders', value: kpiData.total_orders, icon: '📋' },
             { label: 'On-time Orders', value: kpiData.on_time_orders, icon: '✅',
@@ -408,6 +460,33 @@ class SchedulerApp {
             { label: 'Maximum Delay', value: `${kpiData.max_delay.toFixed(2)} hrs`, icon: '📈',
               color: kpiData.max_delay > 0 ? '#e74c3c' : '#2ecc71' }
         ];
+
+        // Phase 2 KPIs
+        const phase2Items = [];
+        if (kpiData.avg_utilization !== undefined) {
+            phase2Items.push({
+                label: 'Avg Utilization',
+                value: `${kpiData.avg_utilization.toFixed(2)}%`,
+                icon: '⚡',
+                color: '#3498db'
+            });
+        }
+        if (kpiData.alt_machine_usage_pct !== undefined) {
+            phase2Items.push({
+                label: 'Alt Machine Usage',
+                value: `${kpiData.alt_machine_usage_pct.toFixed(2)}%`,
+                icon: '🔀',
+                color: '#9b59b6'
+            });
+        }
+        if (kpiData.avg_release_delay !== undefined) {
+            phase2Items.push({
+                label: 'Avg Release Delay',
+                value: `${kpiData.avg_release_delay.toFixed(2)} hrs`,
+                icon: '📦',
+                color: '#e67e22'
+            });
+        }
 
         kpiItems.forEach(item => {
             cardsHTML += `
@@ -422,6 +501,24 @@ class SchedulerApp {
         });
 
         cardsHTML += '</div>';
+
+        // Phase 2 KPIs section
+        if (phase2Items.length > 0) {
+            cardsHTML += '<h3 style="margin-top: 20px;">Phase 2 KPIs</h3><div class="kpi-cards">';
+            phase2Items.forEach(item => {
+                cardsHTML += `
+                    <div class="kpi-card" style="border-left: 4px solid ${item.color};">
+                        <div class="kpi-icon">${item.icon}</div>
+                        <div class="kpi-content">
+                            <div class="kpi-label">${item.label}</div>
+                            <div class="kpi-value">${item.value}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            cardsHTML += '</div>';
+        }
+
         container.innerHTML = cardsHTML;
     }
 

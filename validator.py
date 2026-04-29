@@ -108,6 +108,73 @@ def validate_nulls(data):
     if errors:
         raise ValueError("\n".join(errors))
 
+
+def validate_routing_alternate(data):
+    """
+    Validate Phase 2 alternate routing data.
+
+    Checks:
+    - Each (product_id, operation_seq) has at least 1 machine candidate
+    - All machine_ids in routing_alt exist in machines
+
+    Args:
+        data (dict): Dictionary of DataFrames with keys 'routing_alt' and 'machines'
+
+    Raises:
+        ValueError: If any validation check fails
+    """
+    routing_alt = data['routing_alt']
+    machines_df = data['machines']
+
+    errors = []
+
+    # Check 1: Each (product_id, operation_seq) has at least 1 machine
+    grouped = routing_alt.groupby(['product_id', 'operation_seq']).size()
+    if (grouped < 1).any():
+        invalid = grouped[grouped < 1].index.tolist()
+        errors.append(f"Operations with no machine candidates: {invalid}")
+
+    # Check 2: All machine_ids in routing_alt exist in machines
+    if not routing_alt['machine_id'].isin(machines_df['machine_id']).all():
+        invalid_machines = routing_alt.loc[~routing_alt['machine_id'].isin(machines_df['machine_id']), 'machine_id'].unique()
+        errors.append(f"machine_id in routing_alt but not in machines: {list(invalid_machines)}")
+
+    if errors:
+        raise ValueError("\n".join(errors))
+
+
+def validate_orders_phase2(data):
+    """
+    Validate Phase 2 orders data.
+
+    Checks:
+    - release_time <= due_date
+    - material_available_time <= due_date
+
+    Args:
+        data (dict): Dictionary of DataFrames with keys 'orders'
+
+    Raises:
+        ValueError: If any validation check fails
+    """
+    orders = data['orders']
+
+    errors = []
+
+    # Check release_time <= due_date
+    if (orders['release_time'] > orders['due_date']).any():
+        violations = orders[orders['release_time'] > orders['due_date']]
+        errors.append(f"release_time > due_date for orders: {violations['order_id'].tolist()}")
+
+    # Check material_available_time <= due_date
+    if (orders['material_available_time'] > orders['due_date']).any():
+        violations = orders[orders['material_available_time'] > orders['due_date']]
+        errors.append(f"material_available_time > due_date for orders: {violations['order_id'].tolist()}")
+
+    if errors:
+        raise ValueError("\n".join(errors))
+
+
 if __name__ == "__main__":
     # For testing - import data_loader and validate
     from data_loader import load_data
