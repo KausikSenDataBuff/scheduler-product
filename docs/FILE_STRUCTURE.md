@@ -15,44 +15,52 @@
 ## Data Directory (`/data`)
 
 ### Core Files
-- `machines.csv` - Machine information (Phase 1.5: added `capacity`, `section_id` columns)
+- `machines_updated.csv` - Machine information (Phase 1.5+: capacity, section_id)
 - `products.csv` - Product information
-- `routing.csv` - Routing information (Phase 1.5: added `buffer_id`, `transfer_time_min` columns)
-- `orders.csv` - Order information
+- `orders_phase2.csv` - Phase 2 orders with release_time, material_available_time
+- `orders.csv` - Legacy order information
+
+### Phase 2 Files
+- `routing_alternate.csv` - Multi-machine routing (is_primary, efficiency columns)
+  - Each operation can have multiple candidate machines
+  - is_primary: 1 = primary machine, 0 = alternate
+  - efficiency: Processing time multiplier
 
 ### Phase 1.5 Files
 - `machine_calendar.csv` - Machine availability windows (machine_id, start_time, end_time, is_available)
-- `setup_matrix.csv` - Product transition setup times (765K rows: from_product, to_product, machine_id, setup_time_min)
+- `setup_matrix.csv` - Product transition setup times (from_product, to_product, machine_id, setup_time_min)
 - `sections.csv` - Section definitions (section_id, description, max_wip)
 - `buffers.csv` - Buffer capacity (buffer_id, section_id, capacity)
 
-### Alternative/Updated Files
-- `machines_updated.csv` - Extended machine data with capacity/section_id
-- `routing_updated.csv` - Extended routing with buffer_id/transfer_time_min
+## Frontend Directory (`/frontend`)
+- `index.html` - Main dashboard with file upload, workflow controls, and Phase 2 features
+- `style.css` - Styling for the web interface
+- `script.js` - Frontend logic with Phase 2 KPI and jobs display support
+  - `displayKPIs()`: Shows Phase 2 KPIs (avg_utilization, alt_machine_usage_pct, avg_release_delay)
+  - `displayJobs()`: Handles Phase 2 `candidate_machines` format
 
 ## Documentation (`/docs`)
-- `algorithm_details.md` - Scheduling algorithm details (Phase 1.5 updated)
+- `algorithm_details.md` - Scheduling algorithm details (Phase 2 updated)
 - `api_reference.md` - API endpoint documentation
-- `changelog.md` - Version history (Phase 1.5 added)
+- `changelog.md` - Version history (Phase 2 added)
 - `development-steps.md` - Development workflow
 - `example_usage.py` - Example usage script
 - `flow.png` - System flow diagram
 - `frontend_plan.md` - Frontend development plan
 
 ## Tests (`/tests`)
-- `test_baseline.py` - Baseline schedule verification (Phase 1.5)
-- `test_calendar.py` - Downtime violation check (Phase 1.5)
-- `test_setup.py` - Setup time verification (Phase 1.5)
+- `test_baseline.py` - Baseline schedule verification
+- `test_calendar.py` - Downtime violation check
+- `test_setup.py` - Setup time verification
+- `test_phase2.py` - Phase 2 integration tests (11 tests)
+  - Release constraint logic, best machine selection, alternate vs primary usage, KPI validation
 - `test_backend_direct.py` - Direct backend testing
 - `test_frontend_integration.py` - Frontend-backend integration
 - `test_integration.py` - Integration testing
-- `test_integration.html` - Integration test HTML
-- `test_frontend_workflow.html` - Frontend workflow test
-- `frontend_test.html` - Basic frontend test
-- `test_upload.py` - Upload simulation test
 
 ## Instructions (`/instructions`)
 - `phase-1.5.md` - Phase 1.5 implementation requirements
+- `phase-2.md` - Phase 2 implementation requirements (alternate machines, release constraints)
 
 ## Test Data (`/test_data`)
 - CSV files used for testing (machines.csv, products.csv, etc.)

@@ -2,6 +2,84 @@
 
 ## [Unreleased]
 
+### Frontend Updates
+
+#### Bug Fixes
+- **`displayKPIs()`**: Added Phase 2 KPI display (avg_utilization, alt_machine_usage_pct, avg_release_delay)
+- **`displayJobs()`**: Updated to handle Phase 2 format with `candidate_machines` list per operation
+  - Shows candidate count, primary machine, and efficiency for Phase 2 jobs
+  - Falls back to Phase 1 format for jobs without candidate_machines
+
+#### Modified Files
+- `frontend/script.js` - Updated KPI and jobs display for Phase 2 data
+
+## Version 2.0.0 - 2026-04-29
+### Phase 2: Alternate Machine Routing & Release Constraints
+
+#### New Features
+
+##### Alternate Machine Selection
+- **Multi-machine routing**: Each operation can have multiple candidate machines
+- `routing_alternate.csv` replaces `routing_updated.csv` with `is_primary` and `efficiency` columns
+- `select_best_machine()` helper iterates candidates and picks earliest completion
+- Scheduler tracks `is_primary` flag for KPI reporting
+
+##### Release + Material Constraints
+- Orders now have `release_time` and `material_available_time` fields
+- `apply_release_constraint()` ensures orders don't start before materials are ready
+- `orders_phase2.csv` contains constraint data
+
+##### Phase 2 KPIs
+- `avg_utilization`: Machine busy time / available time (%)
+- `alt_machine_usage_pct`: % of jobs using non-primary machines (~70%)
+- `avg_release_delay`: Average delay from release constraints
+
+#### New Data Files
+- `data/routing_alternate.csv` - Multi-machine routing with efficiency factors
+- `data/orders_phase2.csv` - Orders with release_time and material_available_time
+
+#### New Validators
+- `validate_routing_alternate()` - Each operation has ≥1 machine, machine_ids valid
+- `validate_orders_phase2()` - release_time/material_time ≤ due_date
+
+#### New Tests
+- `tests/test_phase2.py` - Phase 2 integration tests (11 tests)
+  - Release constraint logic
+  - Best machine selection
+  - Alternate vs primary usage
+  - KPI metric validation
+
+#### Modified Files
+- `data_loader.py` - Added routing_alt and orders_phase2 loading with datetime parsing
+- `job_builder.py` - Outputs candidate_machines list per operation
+- `scheduler.py` - Added `select_best_machine()`, `apply_release_constraint()`, Phase 2 main loop
+- `kpi.py` - Added utilization, alt_usage, release_delay metrics
+- `validator.py` - Added Phase 2 validation functions
+- `CLAUDE.md` - Updated to v2.0
+
+#### Algorithm Changes
+Before (v1.5):
+```
+machine_id = op['machine_id']  # Single machine per operation
+current_time = order_date
+```
+
+After (v2.0):
+```
+candidates = op['candidate_machines']  # List of machine options
+best_machine, start, end = select_best_machine(candidates, ...)
+current_time = max(order_date, release_time, material_time)
+```
+
+#### Test Results
+- 7609 operations scheduled
+- 1000 orders processed
+- ~70% alternate machine usage (scheduler prefers faster machines)
+- ~85% on-time delivery
+- All Phase 2 tests passing
+
+---
+
 ## Version 1.5.2 - 2026-04-28
 ### Capacity-Aware Verification
 

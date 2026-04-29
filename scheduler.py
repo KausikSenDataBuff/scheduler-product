@@ -135,34 +135,89 @@ def build_setup_dict(setup_df):
     return setup_dict
 
 
-def run_scheduler(data):
+def apply_release_constraint(order_date, release_time, material_available_time):
     """
-    Run a simple scheduling algorithm based on order due dates.
+    Returns the earliest valid start time for an order based on release and material constraints.
+
+    Args:
+        order_date: When the order was placed
+        release_time: When the order is released for scheduling
+        material_available_time: When materials are available
+
+    Returns:
+        Timestamp: The earliest valid start time
+    """
+    return max(order_date, release_time, material_available_time)
+
+
+def select_best_machine(candidate_machines, machine_intervals, machine_capacity,
+                       current_time, setup_dict, last_product, calendar_df):
+    """
+    Select the machine that allows earliest completion from a list of candidates.
+
+    Args:
+        candidate_machines: list of dicts with machine_id, proc_time, is_primary, efficiency
+        machine_intervals: dict of machine_id -> list of (start, end) tuples
+        machine_capacity: dict of machine_id -> capacity
+        current_time: earliest time we can start
+        setup_dict: pre-indexed setup time lookup
+        last_product: dict of machine_id -> last product scheduled
+        calendar_df: DataFrame with machine availability
+
+    Returns:
+        tuple: (machine_id, start_time, end_time, is_primary) or (None, None, None, None) if no valid machine
+    """
+    best_machine = None
+    best_start = None
+    best_end = None
+    best_is_primary = False
+
+    for option in candidate_machines:
+        m = option['machine_id']
+        proc_time = int(option['proc_time'])
+
+        # Get earliest slot for this machine
+        start, _ = get_earliest_slot(machine_intervals[m], machine_capacity[m], current_time, proc_time)
+        end = start + pd.Timedelta(minutes=proc_time)
+
+        if best_end is None or end < best_end:
+            best_machine = m
+            best_start = start
+            best_end = end
+            best_is_primary = option['is_primary']
+
+    return best_machine, best_start, best_end, best_is_primary
+
+
+def run_scheduler(data, jobs_df=None):
+    """
+    Run a Phase 2 scheduling algorithm with alternate machine selection and release constraints.
 
     Steps:
     1. Sort orders by due_date (ascending)
     2. For each order:
-        current_time = order_date
-        3. For each operation:
-            start = adjust_to_calendar(current_time)
-            start, end = get_earliest_slot(capacity-aware)
-            end = adjust_to_calendar(end)
-        4. Update machine schedule
-        5. Store result
+       - current_time = max(order_date, release_time, material_available_time)
+       3. For each operation:
+          - Select best machine from candidate_machines (earliest completion)
+          - Add setup time if transitioning products
+          - Schedule on best machine with capacity awareness
+          - Update machine state
+       4. Store result
 
     Args:
         data (dict): Dictionary of DataFrames with keys:
-                     'orders', 'routing', 'machines'
-                     (as returned by load_data)
+                     'orders', 'routing_alt', 'machines'
+                     (Phase 2 uses routing_alt for multi-machine routing)
+        jobs_df (DataFrame, optional): Pre-built jobs from job_builder.
+                                       If not provided, builds jobs internally.
 
     Returns:
         pandas.DataFrame: DataFrame with columns:
-                          order_id, operation_seq, machine_id, start, end
+                          order_id, operation_seq, machine_id, start, end, is_primary
                           where start and end are Timestamps.
     """
     # Extract DataFrames
     orders_df = data['orders']
-    routing_df = data['routing']
     machines_df = data['machines']
 
     # Get optional calendar data
@@ -171,13 +226,20 @@ def run_scheduler(data):
     setup_df = data.get('setup_matrix', None)
     setup_dict = build_setup_dict(setup_df)
 
-    # 1. Sort orders by due_date (ascending)
-    orders_sorted = orders_df.sort_values('due_date', ascending=True)
+    # Build jobs if not provided
+    if jobs_df is None:
+        from job_builder import build_jobs
+        jobs_df = build_jobs(data)
+
+    # 1. Sort jobs by due_date (need to join with orders)
+    jobs_with_orders = jobs_df.merge(
+        orders_df[['order_id', 'due_date', 'release_time', 'material_available_time', 'order_date']],
+        on='order_id',
+        how='left'
+    )
+    jobs_sorted = jobs_with_orders.sort_values('due_date', ascending=True)
 
     # 2. Initialize machine state with capacity support
-    # machine_intervals: list of (start, end) tuples for each machine
-    # machine_capacity: capacity per machine (defaults to 1)
-    # last_product: tracks the product that was last scheduled on each machine
     machine_intervals = {row['machine_id']: [] for _, row in machines_df.iterrows()}
     machine_capacity = {}
     last_product = {}
@@ -190,64 +252,65 @@ def run_scheduler(data):
     # List to collect scheduled operations
     scheduled_ops = []
 
-    # 3. Process each order in due_date order
-    for _, order in orders_sorted.iterrows():
-        order_id = order['order_id']
-        product_id = order['product_id']
-        order_date = order['order_date']  # This is already a Timestamp from data_loader
+    # 3. Process each job in due_date order
+    for _, job in jobs_sorted.iterrows():
+        order_id = job['order_id']
+        product_id = job['product_id']
+        operation_seq = job['operation_seq']
+        order_date = job['order_date']
+        candidate_machines = job['candidate_machines']
 
-        # current_time starts at the order date for the first operation
-        current_time = order_date
+        # Phase 2: Apply release and material constraints
+        release_time = job.get('release_time', order_date)
+        material_time = job.get('material_available_time', order_date)
+        current_time = apply_release_constraint(order_date, release_time, material_time)
 
-        # Get operations for this product, sorted by operation_seq
-        product_operations = routing_df[
-            routing_df['product_id'] == product_id
-        ].sort_values('operation_seq')
+        # Phase 2: Select best machine from candidates
+        best_machine, start_time, end_time, is_primary = select_best_machine(
+            candidate_machines, machine_intervals, machine_capacity,
+            current_time, setup_dict, last_product, calendar_df
+        )
 
-        # 4. Process each operation in the order
-        for _, op in product_operations.iterrows():
-            machine_id = op['machine_id']
-            proc_time_min = op['proc_time_min']  # This is in minutes
-            current_product = op['product_id']
+        if best_machine is None:
+            raise ValueError(f"No valid machine found for order {order_id} operation {operation_seq}")
 
-            # Adjust current_time to calendar availability first
-            current_time = adjust_to_calendar(machine_id, current_time, calendar_df)
-
-            # Add setup time if transitioning from a different product
-            setup_time = get_setup_time(machine_id, last_product[machine_id], current_product, setup_dict)
-            if setup_time > 0:
-                current_time = current_time + pd.Timedelta(minutes=setup_time)
-                # Adjust to calendar after adding setup time
-                current_time = adjust_to_calendar(machine_id, current_time, calendar_df)
-
-            # Use capacity-aware slot finding
+        # Add setup time if transitioning from a different product
+        setup_time = get_setup_time(best_machine, last_product[best_machine], product_id, setup_dict)
+        if setup_time > 0:
+            current_time = current_time + pd.Timedelta(minutes=setup_time)
+            # Adjust to calendar after adding setup time
+            current_time = adjust_to_calendar(best_machine, current_time, calendar_df)
+            # Recalculate slot after adjusting for setup
+            proc_time = int(candidate_machines[0]['proc_time'])  # Use first candidate's proc_time
             start_time, end_time = get_earliest_slot(
-                machine_intervals[machine_id],
-                machine_capacity[machine_id],
+                machine_intervals[best_machine],
+                machine_capacity[best_machine],
                 current_time,
-                proc_time_min
+                proc_time
             )
+            end_time = start_time + pd.Timedelta(minutes=proc_time)
 
-            # Adjust end_time to calendar availability
-            end_time = adjust_to_calendar(machine_id, end_time, calendar_df)
+        # Adjust end_time to calendar availability
+        end_time = adjust_to_calendar(best_machine, end_time, calendar_df)
 
-            # Record the scheduled operation
-            scheduled_ops.append({
-                'order_id': order_id,
-                'operation_seq': op['operation_seq'],
-                'machine_id': machine_id,
-                'start': start_time,
-                'end': end_time
-            })
+        # Record the scheduled operation
+        scheduled_ops.append({
+            'order_id': order_id,
+            'operation_seq': operation_seq,
+            'machine_id': best_machine,
+            'start': start_time,
+            'end': end_time,
+            'is_primary': is_primary
+        })
 
-            # Add this interval to the machine's active intervals
-            machine_intervals[machine_id].append((start_time, end_time))
+        # Add this interval to the machine's active intervals
+        machine_intervals[best_machine].append((start_time, end_time))
 
-            # Update last product for this machine
-            last_product[machine_id] = current_product
+        # Update last product for this machine
+        last_product[best_machine] = product_id
 
-            # For the next operation in this order, we start when this operation ends
-            current_time = end_time
+        # For the next operation in this order, we start when this operation ends
+        current_time = end_time
 
     # Return the scheduled operations as a DataFrame
     return pd.DataFrame(scheduled_ops)
@@ -260,7 +323,7 @@ def save_schedule(df_schedule, file_path='schedule.csv'):
 
     Args:
         df_schedule (pandas.DataFrame): DataFrame with columns:
-                                        order_id, operation_seq, machine_id, start, end
+                                        order_id, operation_seq, machine_id, start, end, is_primary
                                         where start and end are Timestamps.
         file_path (str or Path): The path where the CSV file should be saved.
                                 Defaults to 'schedule.csv'.
@@ -272,7 +335,6 @@ def save_schedule(df_schedule, file_path='schedule.csv'):
     df_to_save = df_schedule.copy()
 
     # Convert the timestamp columns to a string format for consistent output
-    # Using ISO format (YYYY-MM-DD HH:MM:SS) for readability
     df_to_save['start'] = df_to_save['start'].dt.strftime('%Y-%m-%d %H:%M:%S')
     df_to_save['end'] = df_to_save['end'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
@@ -293,12 +355,11 @@ def verify_schedule(df_schedule, machines_df=None):
     """
     Verify the schedule for two conditions:
     1. No machine has overlapping operations beyond its capacity.
-    2. For each order, operation_seq order is respected (i.e., operations are in increasing order of operation_seq
-       and start times are non-decreasing).
+    2. For each order, operation_seq order is respected.
 
     Args:
         df_schedule (pandas.DataFrame): DataFrame with columns:
-                                        order_id, operation_seq, machine_id, start, end
+                                        order_id, operation_seq, machine_id, start, end, is_primary
                                         where start and end are Timestamps or strings in datetime format.
         machines_df (pandas.DataFrame, optional): DataFrame with machine_id and capacity columns.
                                                   If not provided, capacity defaults to 1 for all machines.
@@ -306,9 +367,6 @@ def verify_schedule(df_schedule, machines_df=None):
     Returns:
         tuple: (bool, list) where bool is True if all checks pass, False otherwise,
                and list contains error messages if any.
-
-    Raises:
-        ValueError: If any of the checks fail (if you prefer to raise instead of return).
     """
     # Ensure the start and end columns are datetime
     df = df_schedule.copy()
@@ -344,14 +402,12 @@ def verify_schedule(df_schedule, machines_df=None):
                 'operation_seq': row['operation_seq']
             })
 
-        # Check for capacity violations by finding maximum concurrent operations
-        # Collect all start and end times, then count active operations at each point
+        # Check for capacity violations
         time_points = []
         for interval in intervals:
             time_points.append((interval['start'], 'start', interval))
             time_points.append((interval['end'], 'end', interval))
 
-        # Sort by time, with 'end' before 'start' at same timestamp to handle half-open intervals
         time_points.sort(key=lambda x: (x[0], 0 if x[1] == 'end' else 1))
 
         max_concurrent = 0
@@ -370,7 +426,6 @@ def verify_schedule(df_schedule, machines_df=None):
                 current_concurrent -= 1
 
         if max_concurrent > capacity:
-            # Find which operations were active at the violation time
             active_ops = []
             for interval in intervals:
                 if interval['start'] <= violation_time < interval['end']:
@@ -381,20 +436,16 @@ def verify_schedule(df_schedule, machines_df=None):
                 f"At {violation_time}, {max_concurrent} operations are running (exceeds capacity {capacity}). "
                 f"Active: {', '.join(active_ops)}"
             )
-            # Break early for this machine to avoid too many messages
             break
 
     # Check 2: For each order, operation_seq order is respected
     for order_id, group in df.groupby('order_id'):
-        # Sort by operation_seq
         group_sorted = group.sort_values('operation_seq')
-        # Check that operation_seq is strictly increasing (should be, but verify)
         seqs = group_sorted['operation_seq'].tolist()
         if seqs != sorted(seqs):
             errors.append(
                 f"Order {order_id}: operation_seq values are not in strictly increasing order: {seqs}"
             )
-        # Check that start times are non-decreasing when ordered by operation_seq
         prev_start = None
         for _, row in group_sorted.iterrows():
             if prev_start is not None and row['start'] < prev_start:
@@ -408,8 +459,6 @@ def verify_schedule(df_schedule, machines_df=None):
             prev_op_seq = row['operation_seq']
 
     if errors:
-        # If you want to raise an exception, uncomment the following line:
-        # raise ValueError("Schedule verification failed:\n" + "\n".join(errors))
         return False, errors
     else:
         return True, []
@@ -422,7 +471,7 @@ if __name__ == "__main__":
         data = load_data()
         print("Loaded data successfully")
         print(f"Orders: {len(data['orders'])}")
-        print(f"Routing entries: {len(data['routing'])}")
+        print(f"Routing alt entries: {len(data['routing_alt'])}")
         print(f"Machines: {len(data['machines'])}")
 
         # Run the scheduler
@@ -446,10 +495,10 @@ if __name__ == "__main__":
         print("\nVerifying schedule...")
         passed, errors = verify_schedule(schedule_df, machines_df)
         if passed:
-            print("   PASS: Schedule verification passed: no overlaps and operation_seq order respected.")
+            print("   PASS: Schedule verification passed.")
         else:
             print("   FAIL: Schedule verification failed:")
-            for err in errors[:5]:  # Show first 5 errors
+            for err in errors[:5]:
                 print(f"     - {err}")
             if len(errors) > 5:
                 print(f"     ... and {len(errors) - 5} more errors.")

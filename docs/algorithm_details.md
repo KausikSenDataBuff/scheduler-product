@@ -1,5 +1,71 @@
 # Algorithm Details
 
+## Scheduling Algorithm (Phase 2)
+
+The Phase 2 scheduling algorithm in `scheduler.py` extends Phase 1.5 with alternate machine routing and release constraints.
+
+### Phase 2 Key Changes
+
+1. **Alternate Machine Selection**: Each operation has multiple candidate machines. The scheduler picks the one with earliest completion time.
+2. **Release + Material Constraints**: Orders can't start until `release_time` and `material_available_time` are satisfied.
+
+### 1. Order Prioritization
+- Orders are sorted by `due_date` in ascending order (earliest due date first)
+
+### 2. Machine State Tracking (Phase 1.5+)
+Each machine maintains:
+```python
+machine_intervals[machine_id] = [(start1, end1), (start2, end2), ...]  # Active intervals
+machine_capacity[machine_id] = N  # Concurrent operation capacity
+last_product[machine_id] = product_id  # For setup time calculation
+```
+
+### 3. Release Constraint (Phase 2)
+Before scheduling, compute earliest valid start time:
+```python
+current_time = max(order_date, release_time, material_available_time)
+```
+
+### 4. Operation Scheduling with Candidate Machines (Phase 2)
+For each order (in due date order):
+- Set `current_time = max(order_date, release_time, material_time)` (Phase 2)
+- For each operation (sorted by `operation_seq`):
+  - Build `candidate_machines` list from routing_alt
+  - Call `select_best_machine()` to pick earliest-finishing machine
+  - Adjust for calendar availability
+  - Add setup time if transitioning products
+  - Find slot with `get_earliest_slot()`
+  - Adjust end for calendar
+  - Record operation with `is_primary` flag
+
+### 5. Key Scheduling Functions (Phase 2)
+
+#### select_best_machine() [NEW]
+```python
+def select_best_machine(candidate_machines, machine_intervals, machine_capacity,
+                       current_time, setup_dict, last_product, calendar_df):
+    best_machine = None
+    best_end = None
+    for option in candidate_machines:
+        m = option['machine_id']
+        proc_time = int(option['proc_time'])
+        start = get_earliest_slot(machine_intervals[m], machine_capacity[m], current_time, proc_time)
+        end = start + pd.Timedelta(minutes=proc_time)
+        if best_end is None or end < best_end:
+            best_machine = m
+            best_start = start
+            best_end = end
+    return best_machine, best_start, best_end, option['is_primary']
+```
+
+#### apply_release_constraint() [NEW]
+```python
+def apply_release_constraint(order_date, release_time, material_available_time):
+    return max(order_date, release_time, material_available_time)
+```
+
+---
+
 ## Scheduling Algorithm (Phase 1.5)
 
 The scheduling algorithm implemented in `scheduler.py` follows these steps:
@@ -104,6 +170,22 @@ The KPI calculations in `kpi.py` work as follows:
 - `late_orders`: Count of orders where delay_hours > 0 (completed late)
 - `avg_delay`: Mean of delay_hours across all orders
 - `max_delay`: Maximum delay_hours value (representing the latest completion relative to due date)
+
+### Phase 2 KPI Metrics
+- `avg_utilization`: (total busy hours) / (num_machines * available_time) * 100
+- `alt_machine_usage_pct`: (jobs where is_primary=False) / total jobs * 100
+- `avg_release_delay`: Mean of (first_op_start - release_time) for constrained orders
+
+**Typical Phase 2 Results:**
+- Alternate machine usage: ~70% (scheduler optimizes for fastest completion)
+- Machine utilization: ~15%
+- Average release delay: ~36 hours
+
+### Frontend KPI Display
+The frontend (`frontend/script.js`) displays Phase 2 KPIs in a separate section:
+- `avg_utilization`: Shown with ⚡ icon in blue
+- `alt_machine_usage_pct`: Shown with 🔀 icon in purple
+- `avg_release_delay`: Shown with 📦 icon in orange
 
 ## Gantt Chart Visualization
 

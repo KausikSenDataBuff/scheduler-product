@@ -4,31 +4,52 @@ def build_jobs(data):
     """
     Build operation-level jobs by joining orders with routing on product_id.
 
+    For Phase 2, uses routing_alternate to provide multiple machine candidates
+    per operation. Each operation has a list of candidate machines with their
+    processing times and efficiency factors.
+
     Args:
-        data (dict): Dictionary of DataFrames with keys 'orders' and 'routing'
-                     (as returned by load_data)
+        data (dict): Dictionary of DataFrames with keys 'orders' and 'routing_alt'
+                     (as returned by load_data for Phase 2)
 
     Returns:
         pandas.DataFrame: DataFrame with columns:
-                          order_id, product_id, operation_seq, machine_id, proc_time_min
+                          order_id, product_id, operation_seq, candidate_machines
+                          where candidate_machines is a list of dicts:
+                          [{'machine_id': 'M1', 'proc_time': 10, 'is_primary': True, 'efficiency': 1.0}, ...]
     """
     # Extract the required DataFrames
     orders_df = data['orders']
-    routing_df = data['routing']
+    routing_alt_df = data['routing_alt']
 
-    # Merge orders with routing on product_id
-    # We want to keep all orders and match their routing operations
-    merged_df = pd.merge(
-        orders_df,
-        routing_df,
-        on='product_id',
-        how='inner'  # Only keep orders that have routing defined
-    )
+    # Group routing by (product_id, operation_seq) to build candidate lists
+    grouped = routing_alt_df.groupby(['product_id', 'operation_seq'])
 
-    # Select and return the required columns
-    result_df = merged_df[['order_id', 'product_id', 'operation_seq', 'machine_id', 'proc_time_min']]
+    result_rows = []
 
-    return result_df
+    for (product_id, op_seq), group in grouped:
+        # Build list of candidate machines for this operation
+        candidates = []
+        for _, row in group.iterrows():
+            candidates.append({
+                'machine_id': row['machine_id'],
+                'proc_time': row['proc_time_min'],
+                'is_primary': row['is_primary'] == 1,
+                'efficiency': row['efficiency']
+            })
+
+        # Get all orders for this product
+        product_orders = orders_df[orders_df['product_id'] == product_id]
+
+        for _, order in product_orders.iterrows():
+            result_rows.append({
+                'order_id': order['order_id'],
+                'product_id': product_id,
+                'operation_seq': op_seq,
+                'candidate_machines': candidates
+            })
+
+    return pd.DataFrame(result_rows)
 
 def initialize_machine_state(data):
     """
@@ -55,17 +76,19 @@ if __name__ == "__main__":
         # Test build_jobs
         jobs_df = build_jobs(data)
         print(f"Built {len(jobs_df)} job operations from {len(data['orders'])} orders")
-        print("\nFirst 5 rows:")
-        print(jobs_df.head())
+        print(f"Columns: {list(jobs_df.columns)}")
+        print("\nFirst 3 rows:")
+        for i, row in jobs_df.head(3).iterrows():
+            print(f"  {row['order_id']}: {row['product_id']} op {row['operation_seq']}")
+            print(f"    Candidates: {len(row['candidate_machines'])} machines")
+            for c in row['candidate_machines'][:2]:
+                print(f"      {c['machine_id']}: {c['proc_time']}min (primary={c['is_primary']})")
 
         # Test initialize_machine_state
         machine_state = initialize_machine_state(data)
         print(f"\nInitialized state for {len(machine_state)} machines")
-        print("Sample machine states (first 3):")
-        for i, (machine_id, jobs) in enumerate(list(machine_state.items())[:3]):
-            print(f"  {machine_id}: {jobs} (length: {len(jobs)})")
 
-        print("\nDataFrame info:")
-        print(jobs_df.info())
     except Exception as e:
         print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()

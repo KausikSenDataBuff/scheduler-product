@@ -1,13 +1,13 @@
-# CLAUDE.md - Scheduler Product v1.5
+# CLAUDE.md - Scheduler Product v2.0
 
 ## Project Overview
-Production scheduler that processes orders through operations on machines. Currently at Phase 1.5 with support for parallel capacity, machine calendars, setup times, sections, buffers, and transfer times.
+Production scheduler that processes orders through operations on machines. Phase 2.0 with support for alternate machine routing, release/material constraints, plus Phase 1.5 features (parallel capacity, machine calendars, setup times).
 
 ## Entry Points
 
 ### backend_api.py (Web Interface)
 FastAPI server serving the frontend UI. Endpoints:
-- `POST /upload` - Upload CSV files (accepts optional Phase 1.5 files)
+- `POST /upload` - Upload CSV files (Phase 1.5 + Phase 2 files)
 - `POST /process/{session_id}` - Run scheduling workflow
 - `GET /data/{session_id}/{data_type}` - Get jobs/schedule/KPI/verification data
 - `GET /download/{session_id}/schedule` - Download schedule.csv
@@ -24,24 +24,25 @@ python backend_api.py  # Then open http://localhost:8000
 python main.py  # Run full pipeline
 
 # Run tests
-python tests/test_baseline.py  # Core schedule validity
-python tests/test_calendar.py  # No downtime violations
-python tests/test_setup.py      # Setup time applied correctly
+python -m pytest tests/test_phase2.py -v  # Phase 2 tests
+python tests/test_baseline.py             # Core schedule validity
 ```
 
 ## Core Modules
 
 ### scheduler.py (Main Logic)
 **Key Functions:**
-- `run_scheduler(data)` - Main scheduling entry point
+- `run_scheduler(data, jobs_df=None)` - Phase 2 scheduling with alternate machines & constraints
+- `select_best_machine(candidates, ...)` - Pick fastest machine from candidates
+- `apply_release_constraint(order_date, release_time, material_time)` - Enforce time constraints
 - `get_earliest_slot(intervals, capacity, time, duration)` - Find slot respecting capacity
 - `adjust_to_calendar(machine_id, time, calendar_df)` - Bypass downtime periods
 - `get_setup_time(machine_id, from_product, to_product, setup_dict)` - O(1) setup lookup
 - `build_setup_dict(setup_df)` - Pre-index setup matrix for fast lookups
-- `verify_schedule(df, machines_df)` - Validate schedule correctness (capacity-aware)
+- `verify_schedule(df, machines_df)` - Validate schedule correctness
 - `save_schedule(df, path)` - Save to CSV
 
-**Machine State (Phase 1.5):**
+**Machine State (Phase 1.5+):**
 ```python
 machine_intervals[machine_id] = [(start1, end1), ...]  # NOT single timestamp
 machine_capacity[machine_id] = N  # Concurrent operation limit
@@ -50,105 +51,147 @@ last_product[machine_id] = product_id  # For setup calculation
 
 ### data_loader.py
 Loads CSV files from `/data`:
-- Core: `machines.csv`, `products.csv`, `routing.csv`, `orders.csv`
+- Core: `machines_updated.csv`, `products.csv`, `routing_updated.csv`, `orders.csv`
 - Phase 1.5: `machine_calendar.csv`, `setup_matrix.csv`, `sections.csv`, `buffers.csv`
+- Phase 2: `routing_alternate.csv`, `orders_phase2.csv`
 
 **Returns:** `dict[str, DataFrame]`
 
+### job_builder.py
+- `build_jobs(data)` - Join orders with routing_alt, output candidate_machines list
+- `initialize_machine_state(data)` - Create empty machine state dict
+
 ### kpi.py
 - `compute_completion(df_schedule, orders_df)` - Per-order completion times
-- `compute_kpi_metrics(df_schedule, orders_df)` - KPI dictionary
+- `compute_kpi_metrics(df_schedule, orders_df)` - Phase 2 KPIs including utilization
+- `compute_machine_utilization(df_schedule, orders_df)` - % machine utilization
+- `compute_alt_machine_usage(df_schedule)` - % jobs using non-primary machines
+- `compute_release_delay(df_schedule, orders_df)` - Avg delay from release constraints
 
 ### validator.py
 - `validate_foreign_keys(data)` - Ensures referential integrity
-- `validate_nulls(data)` - Checks for null values in critical fields, including capacity validation
-
-### job_builder.py
-- `build_jobs(data)` - Join orders with routing
-- `initialize_machine_state(data)` - Create empty machine state dict
+- `validate_nulls(data)` - Checks null values in critical fields
+- `validate_routing_alternate(data)` - Phase 2 routing validation
+- `validate_orders_phase2(data)` - Phase 2 orders validation
 
 ## Data Files
 
-### machines.csv
-```
-machine_id,department,shift_start,shift_end,capacity
-MIX_M1,MIX,08:00,20:00,1
-```
-- `capacity` defaults to 1 (Phase 1.5)
+### Core Data (`/data`)
+| File | Phase | Description |
+|------|-------|-------------|
+| `machines_updated.csv` | 1.5+ | Machine info with capacity |
+| `products.csv` | 1.0 | Product info |
+| `routing_updated.csv` | 1.5 | Operation routing |
+| `routing_alternate.csv` | **2.0** | Multi-machine routing |
+| `orders.csv` | 1.0 | Legacy orders |
+| `orders_phase2.csv` | **2.0** | Orders with release/material constraints |
 
-### machine_calendar.csv
-```
-machine_id,start_time,end_time,is_available
-MIX_M1,2025-01-01 08:00,2025-01-01 16:00,1
-MIX_M1,2025-01-01 12:00,2025-01-01 14:00,0  # Downtime
-```
-- `is_available=0` = unavailable period
+### Phase 1.5 Data
+| File | Description |
+|------|-------------|
+| `machine_calendar.csv` | Machine availability windows |
+| `setup_matrix.csv` | Product transition setup times |
+| `sections.csv` | Section definitions |
+| `buffers.csv` | Buffer capacity per section |
 
-### setup_matrix.csv
+### routing_alternate.csv (Phase 2)
 ```
-from_product,to_product,machine_id,setup_time_min
-TYRE_0000,TYRE_0001,MIX_M1,17
+product_id,operation_seq,department,machine_id,proc_time_min,is_primary,efficiency
+TYRE_0000,1,MIX,MIX_M1,10.0,1,1.0
+TYRE_0000,1,MIX,BLD_M3,12.76,0,0.78  # Alternate machine
 ```
-- 765K rows; use `build_setup_dict()` for O(1) lookups
+- Multiple rows per (product_id, operation_seq)
+- `is_primary`: 1 = primary machine, 0 = alternate
+- `efficiency`: Processing time multiplier
 
-### sections.csv
+### orders_phase2.csv (Phase 2)
 ```
-section_id,description,max_wip
-SEC_1,Section 1,15
+order_id,product_id,quantity,order_date,due_date,release_time,material_available_time,penalty_per_hour
+ORD_00000,TYRE_0036,56,2026-01-07,2026-01-10,2026-01-08 12:00:00,2026-01-09 00:00:00,69
+```
+- `release_time`: Order released for scheduling
+- `material_available_time`: Materials ready for production
+
+## Phase 2 Features
+
+### 1. Alternate Machine Routing
+**Problem:** 1 operation can run on multiple machines.
+
+**Solution:** `select_best_machine()` picks machine with earliest completion time.
+
+```python
+candidates = [
+    {'machine_id': 'M1', 'proc_time': 10, 'is_primary': True, 'efficiency': 1.0},
+    {'machine_id': 'M2', 'proc_time': 12, 'is_primary': False, 'efficiency': 0.8}
+]
+best_machine, start, end, is_primary = select_best_machine(candidates, ...)
 ```
 
-### buffers.csv
-```
-buffer_id,section_id,capacity
-BUF_SEC_1,SEC_1,11
+### 2. Release + Material Constraints
+**Problem:** Orders can't start until materials are available.
+
+**Solution:** `apply_release_constraint()` enforces timing constraints.
+
+```python
+current_time = max(order_date, release_time, material_available_time)
 ```
 
-## Scheduling Algorithm
+## Scheduling Algorithm (Phase 2)
 
 1. Sort orders by `due_date` (ascending)
-2. For each order:
-   - `current_time = order_date`
+2. Build jobs with `candidate_machines` per operation
+3. For each order:
+   - `current_time = max(order_date, release_time, material_available_time)`
    - For each operation (sorted by `operation_seq`):
-     - `current_time = adjust_to_calendar(machine_id, current_time)`
+     - Select best machine from candidates (earliest end time)
      - Add setup time if product changed
-     - `start, end = get_earliest_slot(machine_intervals, capacity, current_time, duration)`
-     - `end = adjust_to_calendar(machine_id, end)`
-     - Record and update `machine_intervals[machine_id]`
-     - `last_product[machine_id] = current_product`
+     - `start, end = get_earliest_slot(...)`
+     - Record and update machine state
      - `current_time = end`
+
+## Phase 2 KPIs
+
+| Metric | Description |
+|--------|-------------|
+| `avg_utilization` | Machine busy time / available time (%) |
+| `alt_machine_usage_pct` | % jobs using non-primary machines |
+| `avg_release_delay` | Avg delay from release constraints (hrs) |
+
+**Typical Phase 2 Results:**
+- Alternate machine usage: ~70% (scheduler prefers efficient machines)
+- Avg utilization: ~15%
+- Avg release delay: ~36 hours
 
 ## Verification
 `verify_schedule(df_schedule, machines_df=None)` checks:
-1. **No overlaps beyond capacity**: For each machine, counts max concurrent operations at any point in time (respects capacity > 1)
+1. **No overlaps beyond capacity**: Max concurrent ops at any point
 2. operation_seq order respected per order
-3. (Phase 1.5) No operations in downtime periods
-
-**Note:** For capacity > 1, legitimate overlaps are allowed up to the capacity limit. The algorithm properly handles interleaved overlaps (e.g., A-B-C where A overlaps with B and B overlaps with C but A doesn't overlap with C).
+3. No operations in downtime periods
 
 ## Tests
 ```bash
-python tests/test_baseline.py  # Core schedule validity
-python tests/test_calendar.py  # No downtime violations
-python tests/test_setup.py      # Setup time applied correctly
+python -m pytest tests/test_phase2.py -v  # Phase 2 tests
+python tests/test_baseline.py             # Core schedule validity
+python tests/test_calendar.py            # No downtime violations
+python tests/test_setup.py               # Setup time applied correctly
 ```
 
 ## Key Metrics
 - 7609 operations scheduled across 34 machines
 - 1000 orders processed
-- ~100% on-time delivery typical
-- Avg delay: -100 to -130 hours (orders finish early relative to due dates)
+- ~85% on-time delivery
+- ~70% alternate machine usage (scheduler optimizes for speed)
+- Avg delay: -77 hours (orders finish early)
 
 ## Common Issues
-- **Slow setup lookup**: Always use `build_setup_dict()` first, don't iterate 765K rows
+- **Slow setup lookup**: Always use `build_setup_dict()` first
 - **Timestamp comparison**: Use pandas Timestamp for all time comparisons
-- **Empty intervals**: `machine_intervals[machine_id]` starts as `[]`, not single timestamp
+- **Empty intervals**: `machine_intervals[machine_id]` starts as `[]`
+- **Phase 2 data**: Use `routing_alternate.csv` and `orders_phase2.csv`
 
 ## File Naming Conventions
-- `*_updated.csv` - Extended data with new columns (alternate versions)
+- `*_updated.csv` - Extended data with new columns
+- `*_alternate.csv` - Phase 2 multi-machine routing
+- `*_phase2.csv` - Phase 2 orders with constraints
 - `machine_calendar.csv` - Calendar/availability data
 - `setup_matrix.csv` - Setup transition times
-
-## TODO (Future Phases)
-- Step 4: Section validation (structure only)
-- Step 5: Buffer WIP enforcement
-- Step 6: Transfer time gaps between operations

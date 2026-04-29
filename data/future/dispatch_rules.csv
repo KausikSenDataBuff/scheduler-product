@@ -1,0 +1,5 @@
+rule_id,rule_name,weight_due_date,weight_priority,weight_setup,weight_slack,weight_processing_time
+R1,EDD,1.0,0.0,0.0,0.0,0
+R2,SPT,0.0,0.0,0.0,0.0,1
+R3,PRIORITY,0.0,1.0,0.0,0.0,0
+R4,HYBRID,0.4,0.3,0.1,0.2,0

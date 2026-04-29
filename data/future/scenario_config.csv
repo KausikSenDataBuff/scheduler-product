@@ -1,0 +1,5 @@
+config_key,value
+objective,minimize_tardiness
+enable_setup_optimization,1
+enable_buffer_constraints,1
+enable_dispatch_rules,1
