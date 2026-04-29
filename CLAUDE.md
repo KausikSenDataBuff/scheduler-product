@@ -38,7 +38,7 @@ python tests/test_setup.py      # Setup time applied correctly
 - `adjust_to_calendar(machine_id, time, calendar_df)` - Bypass downtime periods
 - `get_setup_time(machine_id, from_product, to_product, setup_dict)` - O(1) setup lookup
 - `build_setup_dict(setup_df)` - Pre-index setup matrix for fast lookups
-- `verify_schedule(df)` - Validate schedule correctness
+- `verify_schedule(df, machines_df)` - Validate schedule correctness (capacity-aware)
 - `save_schedule(df, path)` - Save to CSV
 
 **Machine State (Phase 1.5):**
@@ -61,7 +61,7 @@ Loads CSV files from `/data`:
 
 ### validator.py
 - `validate_foreign_keys(data)` - Ensures referential integrity
-- `validate_nulls(data)` - Checks for null values in critical fields
+- `validate_nulls(data)` - Checks for null values in critical fields, including capacity validation
 
 ### job_builder.py
 - `build_jobs(data)` - Join orders with routing
@@ -118,10 +118,12 @@ BUF_SEC_1,SEC_1,11
      - `current_time = end`
 
 ## Verification
-`verify_schedule()` checks:
-1. No overlaps beyond capacity on any machine
+`verify_schedule(df_schedule, machines_df=None)` checks:
+1. **No overlaps beyond capacity**: For each machine, counts max concurrent operations at any point in time (respects capacity > 1)
 2. operation_seq order respected per order
 3. (Phase 1.5) No operations in downtime periods
+
+**Note:** For capacity > 1, legitimate overlaps are allowed up to the capacity limit. The algorithm properly handles interleaved overlaps (e.g., A-B-C where A overlaps with B and B overlaps with C but A doesn't overlap with C).
 
 ## Tests
 ```bash

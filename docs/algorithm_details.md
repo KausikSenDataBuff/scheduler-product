@@ -132,11 +132,28 @@ The Gantt chart in `main.py` provides a visual representation of the schedule:
 
 The verification function in `scheduler.py` checks two critical properties:
 
-### 1. No Machine Overlaps
+### 1. No Machine Overlaps Beyond Capacity
 For each machine:
-- Sort operations by start time
-- Check that each operation's start time is >= previous operation's end time
-- If any operation starts before the previous one ends, there's an overlap
+- Collect all start and end times from operations on that machine
+- Sort time points, handling half-open intervals (end at T doesn't overlap with start at T)
+- Count active operations at each point in time
+- Find maximum concurrent operations at any moment
+- Flag error if max concurrent > machine capacity
+
+**Example of correct capacity handling:**
+```
+Operations on BLD_M1 (capacity=2):
+  A: 05:44-06:11
+  B: 05:54-06:25  (overlaps with A at 05:54-06:11)
+  C: 06:15-06:37  (overlaps with B at 06:15-06:25)
+  D: 06:25-07:03  (overlaps with C at 06:25-06:37)
+
+At 05:54-06:11: 2 operations (A+B) - OK for capacity=2
+At 06:15-06:25: 2 operations (B+C) - OK for capacity=2
+At 06:25-06:37: 2 operations (C+D) - OK for capacity=2
+
+Max concurrent = 2, which equals capacity=2. No error.
+```
 
 ### 2. Operation Sequence Order Respected
 For each order:
