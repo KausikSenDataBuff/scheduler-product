@@ -1,13 +1,13 @@
-# CLAUDE.md - Scheduler Product v2.0
+# CLAUDE.md - Scheduler Product v2.1
 
 ## Project Overview
-Production scheduler that processes orders through operations on machines. Phase 2.0 with support for alternate machine routing, release/material constraints, plus Phase 1.5 features (parallel capacity, machine calendars, setup times).
+Production scheduler that processes orders through operations on machines. Phase 3.0 with support for multi-level orders, BOM dependencies, alternate machine routing, release/material constraints, plus Phase 1.5 features (parallel capacity, machine calendars, setup times).
 
 ## Entry Points
 
 ### backend_api.py (Web Interface)
 FastAPI server serving the frontend UI. Endpoints:
-- `POST /upload` - Upload CSV files (Phase 1.5 + Phase 2 files)
+- `POST /upload` - Upload CSV files (Phase 1.5 + Phase 2 + Phase 3 files)
 - `POST /process/{session_id}` - Run scheduling workflow
 - `GET /data/{session_id}/{data_type}` - Get jobs/schedule/KPI/verification data
 - `GET /download/{session_id}/schedule` - Download schedule.csv
@@ -54,6 +54,7 @@ Loads CSV files from `/data`:
 - Core: `machines_updated.csv`, `products.csv`, `routing_updated.csv`, `orders.csv`
 - Phase 1.5: `machine_calendar.csv`, `setup_matrix.csv`, `sections.csv`, `buffers.csv`
 - Phase 2: `routing_alternate.csv`, `orders_phase2.csv`
+- Phase 3: `orders_multilevel.csv`, `order_links.csv`, `bom.csv`
 
 **Returns:** `dict[str, DataFrame]`
 
@@ -63,16 +64,23 @@ Loads CSV files from `/data`:
 
 ### kpi.py
 - `compute_completion(df_schedule, orders_df)` - Per-order completion times
-- `compute_kpi_metrics(df_schedule, orders_df)` - Phase 2 KPIs including utilization
+- `compute_kpi_metrics(df_schedule, orders_df, ...)` - Phase 2/3 KPIs including utilization
 - `compute_machine_utilization(df_schedule, orders_df)` - % machine utilization
 - `compute_alt_machine_usage(df_schedule)` - % jobs using non-primary machines
 - `compute_release_delay(df_schedule, orders_df)` - Avg delay from release constraints
+- `compute_dependency_delay(df_schedule, order_links)` - Phase 3: parent vs child delay
+- `compute_critical_path_length(...)` - Phase 3: longest chain
+- `compute_component_service_level(...)` - Phase 3: % meeting parent need
+- `compute_wip_explosion_factor(...)` - Phase 3: multilevel vs flat ratio
 
 ### validator.py
 - `validate_foreign_keys(data)` - Ensures referential integrity
 - `validate_nulls(data)` - Checks null values in critical fields
 - `validate_routing_alternate(data)` - Phase 2 routing validation
 - `validate_orders_phase2(data)` - Phase 2 orders validation
+- `validate_bom(data)` - Phase 3: No self-loops, no cycles, products exist
+- `validate_order_links(data)` - Phase 3: Order IDs exist, no cycles
+- `validate_orders_multilevel(data)` - Phase 3: level >= 0, parent valid
 
 ## Data Files
 
@@ -93,6 +101,13 @@ Loads CSV files from `/data`:
 | `setup_matrix.csv` | Product transition setup times |
 | `sections.csv` | Section definitions |
 | `buffers.csv` | Buffer capacity per section |
+
+### Phase 3 Data
+| File | Description |
+|------|-------------|
+| `orders_multilevel.csv` | Orders with level, parent_order_id |
+| `order_links.csv` | Parent-child order dependencies |
+| `bom.csv` | Bill of Materials (parent→child) |
 
 ### routing_alternate.csv (Phase 2)
 ```
@@ -163,11 +178,49 @@ current_time = max(order_date, release_time, material_available_time)
 - Avg utilization: ~15%
 - Avg release delay: ~36 hours
 
+## Phase 3 Features
+
+### 1. Multi-Level Orders
+**Problem:** Orders have parent-child dependencies (child must complete before parent).
+
+**Solution:** `topological_sort_orders()` ensures child-first scheduling order.
+
+```python
+# Kahn's algorithm for topological sort (child-first)
+topo_order = topological_sort_orders(order_links_df, orders_df)
+```
+
+### 2. Dependency Constraints
+**Problem:** Parent order can't start until all children complete.
+
+**Solution:** `build_dependency_graph()` tracks `order_completion_time[order_id]`.
+
+```python
+dependency_ready_time = max(order_completion_time[child] for child in children)
+current_time = max(constraint_time, dependency_ready_time)
+```
+
+### 3. BOM Validation
+**Problem:** Bill of Materials may have cycles or invalid references.
+
+**Solution:** `validate_bom()` uses DFS for cycle detection.
+
+## Phase 3 KPIs
+
+| Metric | Description |
+|--------|-------------|
+| `dependency_delay` | Avg parent_start - max(child_completion) (hrs) |
+| `critical_path_length` | Longest chain per top-level order |
+| `component_service_level` | % child orders meeting parent need |
+| `wip_explosion_factor` | multi-level orders / original orders |
+
 ## Verification
 `verify_schedule(df_schedule, machines_df=None)` checks:
 1. **No overlaps beyond capacity**: Max concurrent ops at any point
 2. operation_seq order respected per order
 3. No operations in downtime periods
+4. **Phase 3: Dependency check**: child_end <= parent_start for all links
+5. **Phase 3: Level consistency**: child.level > parent.level for all links
 
 ## Tests
 ```bash
@@ -175,6 +228,8 @@ python -m pytest tests/test_phase2.py -v  # Phase 2 tests
 python tests/test_baseline.py             # Core schedule validity
 python tests/test_calendar.py            # No downtime violations
 python tests/test_setup.py               # Setup time applied correctly
+python -m pytest tests/test_kpi_phase3.py -v  # Phase 3 KPI tests
+python -m pytest tests/test_bom_explosion.py -v  # BOM tests
 ```
 
 ## Key Metrics
@@ -189,6 +244,7 @@ python tests/test_setup.py               # Setup time applied correctly
 - **Timestamp comparison**: Use pandas Timestamp for all time comparisons
 - **Empty intervals**: `machine_intervals[machine_id]` starts as `[]`
 - **Phase 2 data**: Use `routing_alternate.csv` and `orders_phase2.csv`
+- **Phase 3 data**: Use `orders_multilevel.csv`, `order_links.csv` (optional `bom.csv`)
 
 ## File Naming Conventions
 - `*_updated.csv` - Extended data with new columns
@@ -196,3 +252,6 @@ python tests/test_setup.py               # Setup time applied correctly
 - `*_phase2.csv` - Phase 2 orders with constraints
 - `machine_calendar.csv` - Calendar/availability data
 - `setup_matrix.csv` - Setup transition times
+- `orders_multilevel.csv` - Phase 3 multi-level orders
+- `order_links.csv` - Phase 3 parent-child links
+- `bom.csv` - Bill of Materials

@@ -4,23 +4,37 @@ def build_jobs(data):
     """
     Build operation-level jobs by joining orders with routing on product_id.
 
-    For Phase 2, uses routing_alternate to provide multiple machine candidates
-    per operation. Each operation has a list of candidate machines with their
-    processing times and efficiency factors.
+    For Phase 3 (multi-level), uses orders_multilevel and includes parent-child
+    dependency metadata. For Phase 2, uses orders with routing_alternate.
 
     Args:
-        data (dict): Dictionary of DataFrames with keys 'orders' and 'routing_alt'
-                     (as returned by load_data for Phase 2)
+        data (dict): Dictionary of DataFrames. Phase 3 uses 'orders_multi' and
+                     'order_links'. Phase 2 uses 'orders' and 'routing_alt'.
 
     Returns:
         pandas.DataFrame: DataFrame with columns:
                           order_id, product_id, operation_seq, candidate_machines
+                          [, parent_order_id, level, child_orders] (Phase 3)
                           where candidate_machines is a list of dicts:
                           [{'machine_id': 'M1', 'proc_time': 10, 'is_primary': True, 'efficiency': 1.0}, ...]
     """
-    # Extract the required DataFrames
-    orders_df = data['orders']
+    # Determine which orders to use (Phase 3 multi-level or Phase 2)
+    orders_multi = data.get('orders_multi')
+    orders_df = data['orders'] if orders_multi is None else orders_multi
+
+    # Use routing_alt if available
     routing_alt_df = data['routing_alt']
+    order_links_df = data.get('order_links')
+
+    # Build child orders mapping for Phase 3
+    child_orders_map = {}
+    if order_links_df is not None:
+        for _, row in order_links_df.iterrows():
+            parent = row['parent_order_id']
+            child = row['child_order_id']
+            if parent not in child_orders_map:
+                child_orders_map[parent] = []
+            child_orders_map[parent].append(child)
 
     # Group routing by (product_id, operation_seq) to build candidate lists
     grouped = routing_alt_df.groupby(['product_id', 'operation_seq'])
@@ -42,12 +56,20 @@ def build_jobs(data):
         product_orders = orders_df[orders_df['product_id'] == product_id]
 
         for _, order in product_orders.iterrows():
-            result_rows.append({
+            row_data = {
                 'order_id': order['order_id'],
                 'product_id': product_id,
                 'operation_seq': op_seq,
                 'candidate_machines': candidates
-            })
+            }
+
+            # Phase 3: Add hierarchy metadata
+            if orders_multi is not None:
+                row_data['parent_order_id'] = order.get('parent_order_id', None)
+                row_data['level'] = order.get('level', 0)
+                row_data['child_orders'] = child_orders_map.get(order['order_id'], [])
+
+            result_rows.append(row_data)
 
     return pd.DataFrame(result_rows)
 

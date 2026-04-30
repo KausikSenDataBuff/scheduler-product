@@ -3,15 +3,19 @@ class SchedulerApp {
         this.sessionId = null;
         this.chart = null;
         this.orderChart = null;
-        this.sections = ['validation', 'jobs', 'scheduling', 'verification', 'kpi', 'visualization'];
-        this.currentSectionIndex = -1;
         this.currentChart = 'machine';
         this.phase15Data = null;
+        this.scheduleData = null;
         this.init();
     }
 
     init() {
-        // Bind events
+        // Bind upload tab events
+        document.querySelectorAll('.upload-tab').forEach(tab => {
+            tab.addEventListener('click', (e) => this.switchUploadTab(e.target.dataset.phase));
+        });
+
+        // Bind main action buttons
         document.getElementById('upload-btn').addEventListener('click', () => this.uploadFiles());
         document.getElementById('next-btn').addEventListener('click', () => this.showNextSection());
         document.getElementById('download-schedule-btn').addEventListener('click', () => this.downloadSchedule());
@@ -23,31 +27,30 @@ class SchedulerApp {
             tab.addEventListener('click', (e) => this.switchChartTab(e.target.dataset.chart));
         });
 
-        // Initially disable action buttons
+        // Disable action buttons initially
         this.setActionButtonsDisabled(true);
-
-        // Show progress tracker and upload section
-        this.hideAllSections();
-        document.getElementById('progress-section').style.display = 'block';
-        document.getElementById('features-section').style.display = 'block';
-        document.getElementById('upload-section').style.display = 'block';
-
-        // Initialize current section tracker
-        this.currentSectionIndex = -1;
-        this.sections = ['upload', 'validation', 'jobs', 'scheduling', 'verification', 'kpi', 'visualization'];
     }
 
-    hideAllSections() {
-        const sections = document.querySelectorAll('main section');
-        sections.forEach(section => {
-            section.style.display = 'none';
+    switchUploadTab(phase) {
+        // Update tab active states
+        document.querySelectorAll('.upload-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.phase === phase);
         });
+
+        // Show/hide panels
+        document.getElementById('core-panel').style.display = phase === 'core' ? 'block' : 'none';
+        document.getElementById('phase15-panel').style.display = phase === 'phase15' ? 'block' : 'none';
+        document.getElementById('phase3-panel').style.display = phase === 'phase3' ? 'block' : 'none';
     }
 
     setActionButtonsDisabled(disabled) {
-        document.getElementById('download-schedule-btn').disabled = disabled;
-        document.getElementById('download-chart-btn').disabled = disabled;
-        document.getElementById('reset-btn').disabled = disabled;
+        const downloadBtn = document.getElementById('download-schedule-btn');
+        const downloadChartBtn = document.getElementById('download-chart-btn');
+        const resetBtn = document.getElementById('reset-btn');
+
+        if (downloadBtn) downloadBtn.disabled = disabled;
+        if (downloadChartBtn) downloadChartBtn.disabled = disabled;
+        if (resetBtn) resetBtn.disabled = disabled;
     }
 
     updateProgressStep(stepName, status) {
@@ -60,30 +63,14 @@ class SchedulerApp {
             'KPI Calculation': 'step-kpi',
             'Visualization': 'step-visualization'
         };
+
         const elementId = stepIdMap[stepName];
         if (!elementId) return;
 
         const stepElement = document.getElementById(elementId);
         if (stepElement) {
             stepElement.className = 'step';
-            if (status === 'running') {
-                stepElement.classList.add('running');
-            } else if (status === 'success') {
-                stepElement.classList.add('success');
-            } else if (status === 'error') {
-                stepElement.classList.add('error');
-            } else {
-                stepElement.classList.add('pending');
-            }
-            if (status === 'success') {
-                stepElement.textContent = '✅ ' + stepName;
-            } else if (status === 'error') {
-                stepElement.textContent = '❌ ' + stepName;
-            } else if (status === 'running') {
-                stepElement.textContent = '⏳ ' + stepName;
-            } else {
-                stepElement.textContent = '⬜ ' + stepName;
-            }
+            stepElement.classList.add(status);
         }
     }
 
@@ -118,6 +105,15 @@ class SchedulerApp {
             if (setupFile) formData.append('setup_matrix', setupFile);
             if (sectionsFile) formData.append('sections', sectionsFile);
             if (buffersFile) formData.append('buffers', buffersFile);
+
+            // Phase 3 optional files
+            const ordersMultiFile = document.getElementById('orders-multilevel-file').files[0];
+            const orderLinksFile = document.getElementById('order-links-file').files[0];
+            const bomFile = document.getElementById('bom-file').files[0];
+
+            if (ordersMultiFile) formData.append('orders_multilevel', ordersMultiFile);
+            if (orderLinksFile) formData.append('order_links', orderLinksFile);
+            if (bomFile) formData.append('bom', bomFile);
 
             const response = await fetch('http://localhost:8000/upload', {
                 method: 'POST',
@@ -154,17 +150,41 @@ class SchedulerApp {
 
     showValidationResults(result) {
         const validationResults = document.getElementById('validation-results');
+
         if (result.validation_passed) {
-            let html = `<p class="success-message">✓ ${result.validation_message}</p>`;
+            let html = `<p class="success-message">${result.validation_message}</p>`;
+
             if (result.phase15_summary) {
                 html += this.formatPhase15Summary(result.phase15_summary);
             }
+            if (result.phase3_summary) {
+                html += this.formatPhase3Summary(result.phase3_summary);
+            }
+
             validationResults.innerHTML = html;
         } else {
             validationResults.innerHTML = `
-                <p class="error-message">✗ ${result.validation_message}</p>
+                <p class="error-message">${result.validation_message}</p>
             `;
         }
+    }
+
+    formatPhase3Summary(summary) {
+        if (!summary) return '';
+        let html = '<div style="margin-top: 15px;"><strong>Phase 3 Data Loaded:</strong><ul style="margin-top: 10px; padding-left: 20px;">';
+
+        if (summary.orders_multilevel_uploaded) {
+            html += '<li>Multi-Level Orders (hierarchical)</li>';
+        }
+        if (summary.order_links_uploaded) {
+            html += '<li>Order Dependencies (parent-child)</li>';
+        }
+        if (summary.bom_uploaded) {
+            html += '<li>Bill of Materials</li>';
+        }
+
+        html += '</ul></div>';
+        return html;
     }
 
     formatPhase15Summary(summary) {
@@ -172,10 +192,11 @@ class SchedulerApp {
         let html = '<div class="phase15-info-grid" style="margin-top: 15px;">';
 
         if (summary.machines_capacity) {
+            const deps = Object.keys(summary.machines_capacity).join(', ');
             html += `
                 <div class="phase15-info-card">
-                    <h4>⚡ Machine Capacities</h4>
-                    <p>Departments: ${Object.keys(summary.machines_capacity).join(', ')}</p>
+                    <h4>Machine Capacities</h4>
+                    <p>Departments: ${deps}</p>
                 </div>
             `;
         }
@@ -184,8 +205,8 @@ class SchedulerApp {
             const pct = Math.round(summary.calendar_available * 100);
             html += `
                 <div class="phase15-info-card">
-                    <h4>📅 Calendar Availability</h4>
-                    <p>${pct}% available time</p>
+                    <h4>Calendar Availability</h4>
+                    <p>${pct}% available</p>
                 </div>
             `;
         }
@@ -193,17 +214,8 @@ class SchedulerApp {
         if (summary.setup_transitions) {
             html += `
                 <div class="phase15-info-card">
-                    <h4>🔧 Setup Transitions</h4>
+                    <h4>Setup Transitions</h4>
                     <p>${summary.setup_transitions.toLocaleString()} indexed</p>
-                </div>
-            `;
-        }
-
-        if (summary.sections_count) {
-            html += `
-                <div class="phase15-info-card">
-                    <h4>📦 Sections</h4>
-                    <p>${summary.sections_count} sections defined</p>
                 </div>
             `;
         }
@@ -232,22 +244,22 @@ class SchedulerApp {
             this.updateProgressStep('Job Building', 'success');
             this.updateProgressStep('Scheduling', 'running');
 
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise(resolve => setTimeout(resolve, 300));
 
             this.updateProgressStep('Scheduling', 'success');
             this.updateProgressStep('Verification', 'running');
 
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await new Promise(resolve => setTimeout(resolve, 200));
 
             this.updateProgressStep('Verification', 'success');
             this.updateProgressStep('KPI Calculation', 'running');
 
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await new Promise(resolve => setTimeout(resolve, 200));
 
             this.updateProgressStep('KPI Calculation', 'success');
             this.updateProgressStep('Visualization', 'running');
 
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await new Promise(resolve => setTimeout(resolve, 200));
 
             await this.loadAllResults();
             this.updateProgressStep('Visualization', 'success');
@@ -276,8 +288,8 @@ class SchedulerApp {
 
             const scheduleResponse = await fetch(`http://localhost:8000/data/${this.sessionId}/schedule`);
             const scheduleData = await scheduleResponse.json();
-            this.displaySchedule(scheduleData);
             this.scheduleData = scheduleData;
+            this.displaySchedule(scheduleData);
             this.createGanttChart(scheduleData);
             this.createOrderGanttChart(scheduleData);
 
@@ -289,7 +301,10 @@ class SchedulerApp {
             const verificationData = await verificationResponse.json();
             this.displayVerification(verificationData);
 
-            this.showAllSections();
+            // Show dependency section if we have order links
+            if (this.phase15Data && this.phase15Data.order_links_uploaded) {
+                this.showDependencySection();
+            }
 
         } catch (error) {
             console.error('Error loading results:', error);
@@ -300,103 +315,76 @@ class SchedulerApp {
     displayJobs(jobsData) {
         const container = document.getElementById('jobs-results');
         if (jobsData.length === 0) {
-            container.innerHTML = '<p>No job data available.</p>';
+            container.innerHTML = '<div class="empty-state"><p>No job data available.</p></div>';
             return;
         }
 
-        // Check if Phase 2 format (candidate_machines) or Phase 1 format
         const isPhase2 = jobsData[0].candidate_machines !== undefined;
 
-        if (isPhase2) {
-            // Phase 2 format: show candidate machines info
-            let tableHTML = `
-                <table class="results-table">
-                    <thead>
-                        <tr>
+        let tableHTML = `
+            <table class="results-table">
+                <thead>
+                    <tr>
+                        ${isPhase2 ? `
                             <th>Order ID</th>
                             <th>Product ID</th>
-                            <th>Operation Seq</th>
-                            <th>Candidate Machines</th>
+                            <th>Operation</th>
+                            <th>Candidates</th>
                             <th>Primary Machine</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            `;
+                        ` : `
+                            <th>Order ID</th>
+                            <th>Product ID</th>
+                            <th>Operation</th>
+                            <th>Machine</th>
+                            <th>Proc Time</th>
+                        `}
+                    </tr>
+                </thead>
+                <tbody>
+        `;
 
-            const displayData = jobsData.slice(0, 10);
-            displayData.forEach(job => {
+        const displayData = jobsData.slice(0, 15);
+        displayData.forEach(job => {
+            if (isPhase2) {
                 const candidates = job.candidate_machines;
                 const primaryMachine = candidates.find(c => c.is_primary) || candidates[0];
                 const altCount = candidates.filter(c => !c.is_primary).length;
-                const machineList = candidates.map(c => c.machine_id).join(', ');
 
                 tableHTML += `
                     <tr>
                         <td>${job.order_id}</td>
                         <td>${job.product_id}</td>
-                        <td>${job.operation_seq}</td>
-                        <td title="${machineList}">${candidates.length} ${altCount > 0 ? `(+${altCount} alternate)` : ''}</td>
-                        <td>${primaryMachine.machine_id} (${primaryMachine.proc_time}min${primaryMachine.efficiency !== 1.0 ? `, eff: ${primaryMachine.efficiency}` : ''})</td>
+                        <td>Op ${job.operation_seq}</td>
+                        <td>${candidates.length} ${altCount > 0 ? `(+${altCount} alt)` : ''}</td>
+                        <td>${primaryMachine.machine_id} (${primaryMachine.proc_time}min)</td>
                     </tr>
                 `;
-            });
-
-            tableHTML += `
-                    </tbody>
-                </table>
-            `;
-
-            if (jobsData.length > 10) {
-                tableHTML += `<p><em>Showing first 10 of ${jobsData.length} operations</em></p>`;
-            }
-
-            container.innerHTML = tableHTML;
-        } else {
-            // Phase 1 format: individual machine assignment
-            let tableHTML = `
-                <table class="results-table">
-                    <thead>
-                        <tr>
-                            <th>Order ID</th>
-                            <th>Product ID</th>
-                            <th>Operation Seq</th>
-                            <th>Machine ID</th>
-                            <th>Proc Time (min)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            `;
-
-            const displayData = jobsData.slice(0, 10);
-            displayData.forEach(job => {
+            } else {
                 tableHTML += `
                     <tr>
                         <td>${job.order_id}</td>
                         <td>${job.product_id}</td>
-                        <td>${job.operation_seq}</td>
+                        <td>Op ${job.operation_seq}</td>
                         <td>${job.machine_id}</td>
-                        <td>${job.proc_time_min}</td>
+                        <td>${job.proc_time_min}min</td>
                     </tr>
                 `;
-            });
-
-            tableHTML += `
-                    </tbody>
-                </table>
-            `;
-
-            if (jobsData.length > 10) {
-                tableHTML += `<p><em>Showing first 10 of ${jobsData.length} operations</em></p>`;
             }
+        });
 
-            container.innerHTML = tableHTML;
+        tableHTML += '</tbody></table>';
+
+        if (jobsData.length > 15) {
+            tableHTML += `<p style="margin-top: 10px; color: var(--text-muted); font-size: 0.85rem;">Showing first 15 of ${jobsData.length} operations</p>`;
         }
+
+        container.innerHTML = tableHTML;
     }
 
     displaySchedule(scheduleData) {
         const container = document.getElementById('scheduling-results');
         if (scheduleData.length === 0) {
-            container.innerHTML = '<p>No schedule data available.</p>';
+            container.innerHTML = '<div class="empty-state"><p>No schedule data available.</p></div>';
             return;
         }
 
@@ -405,8 +393,8 @@ class SchedulerApp {
                 <thead>
                     <tr>
                         <th>Order ID</th>
-                        <th>Operation Seq</th>
-                        <th>Machine ID</th>
+                        <th>Operation</th>
+                        <th>Machine</th>
                         <th>Start Time</th>
                         <th>End Time</th>
                     </tr>
@@ -414,26 +402,26 @@ class SchedulerApp {
                 <tbody>
         `;
 
-        const displayData = scheduleData.slice(0, 10);
+        const displayData = scheduleData.slice(0, 15);
         displayData.forEach(op => {
+            const start = new Date(op.start).toLocaleString();
+            const end = new Date(op.end).toLocaleString();
+
             tableHTML += `
                 <tr>
                     <td>${op.order_id}</td>
-                    <td>${op.operation_seq}</td>
+                    <td>Op ${op.operation_seq}</td>
                     <td>${op.machine_id}</td>
-                    <td>${new Date(op.start).toLocaleString()}</td>
-                    <td>${new Date(op.end).toLocaleString()}</td>
+                    <td>${start}</td>
+                    <td>${end}</td>
                 </tr>
             `;
         });
 
-        tableHTML += `
-                </tbody>
-            </table>
-        `;
+        tableHTML += '</tbody></table>';
 
-        if (scheduleData.length > 10) {
-            tableHTML += `<p><em>Showing first 10 of ${scheduleData.length} operations</em></p>`;
+        if (scheduleData.length > 15) {
+            tableHTML += `<p style="margin-top: 10px; color: var(--text-muted); font-size: 0.85rem;">Showing first 15 of ${scheduleData.length} operations</p>`;
         }
 
         container.innerHTML = tableHTML;
@@ -442,73 +430,66 @@ class SchedulerApp {
     displayKPIs(kpiData) {
         const container = document.getElementById('kpi-results');
         if (!kpiData || Object.keys(kpiData).length === 0) {
-            container.innerHTML = '<p>No KPI data available.</p>';
+            container.innerHTML = '<div class="empty-state"><p>No KPI data available.</p></div>';
             return;
         }
 
-        let cardsHTML = '<div class="kpi-cards">';
+        let html = '<div class="kpi-cards">';
 
-        // Phase 1 KPIs
-        const kpiItems = [
+        // Core KPIs
+        const coreItems = [
             { label: 'Total Orders', value: kpiData.total_orders, icon: '📋' },
-            { label: 'On-time Orders', value: kpiData.on_time_orders, icon: '✅',
-              color: kpiData.late_orders === 0 ? '#2ecc71' : '#f39c12' },
-            { label: 'Late Orders', value: kpiData.late_orders, icon: '⏰',
-              color: kpiData.late_orders > 0 ? '#e74c3c' : '#2ecc71' },
-            { label: 'Average Delay', value: `${kpiData.avg_delay.toFixed(2)} hrs`, icon: '⏳',
-              color: kpiData.avg_delay < 0 ? '#2ecc71' : '#e74c3c' },
-            { label: 'Maximum Delay', value: `${kpiData.max_delay.toFixed(2)} hrs`, icon: '📈',
-              color: kpiData.max_delay > 0 ? '#e74c3c' : '#2ecc71' }
+            { label: 'On-Time Orders', value: kpiData.on_time_orders, icon: '✅', color: kpiData.late_orders === 0 ? '#10b981' : '' },
+            { label: 'Late Orders', value: kpiData.late_orders, icon: '⏰', color: kpiData.late_orders > 0 ? '#ef4444' : '' },
+            { label: 'Avg Delay', value: `${kpiData.avg_delay.toFixed(1)}h`, icon: '⏳', color: kpiData.avg_delay < 0 ? '#10b981' : '' },
+            { label: 'Max Delay', value: `${kpiData.max_delay.toFixed(1)}h`, icon: '📈', color: kpiData.max_delay > 0 ? '#ef4444' : '' }
         ];
 
-        // Phase 2 KPIs
-        const phase2Items = [];
-        if (kpiData.avg_utilization !== undefined) {
-            phase2Items.push({
-                label: 'Avg Utilization',
-                value: `${kpiData.avg_utilization.toFixed(2)}%`,
-                icon: '⚡',
-                color: '#3498db'
-            });
-        }
-        if (kpiData.alt_machine_usage_pct !== undefined) {
-            phase2Items.push({
-                label: 'Alt Machine Usage',
-                value: `${kpiData.alt_machine_usage_pct.toFixed(2)}%`,
-                icon: '🔀',
-                color: '#9b59b6'
-            });
-        }
-        if (kpiData.avg_release_delay !== undefined) {
-            phase2Items.push({
-                label: 'Avg Release Delay',
-                value: `${kpiData.avg_release_delay.toFixed(2)} hrs`,
-                icon: '📦',
-                color: '#e67e22'
-            });
-        }
-
-        kpiItems.forEach(item => {
-            cardsHTML += `
-                <div class="kpi-card" style="border-left: 4px solid ${item.color || '#3498db'};">
-                    <div class="kpi-icon">${item.icon}</div>
+        coreItems.forEach(item => {
+            html += `
+                <div class="kpi-card">
+                    <span class="kpi-icon">${item.icon}</span>
                     <div class="kpi-content">
                         <div class="kpi-label">${item.label}</div>
-                        <div class="kpi-value">${item.value}</div>
+                        <div class="kpi-value" style="${item.color ? `color: ${item.color}` : ''}">${item.value}</div>
                     </div>
                 </div>
             `;
         });
 
-        cardsHTML += '</div>';
+        html += '</div>';
 
-        // Phase 2 KPIs section
+        // Phase 2 KPIs
+        const phase2Items = [];
+        if (kpiData.avg_utilization !== undefined) {
+            phase2Items.push({
+                label: 'Utilization',
+                value: `${kpiData.avg_utilization.toFixed(1)}%`,
+                icon: '⚡'
+            });
+        }
+        if (kpiData.alt_machine_usage_pct !== undefined) {
+            phase2Items.push({
+                label: 'Alt Machine Usage',
+                value: `${kpiData.alt_machine_usage_pct.toFixed(1)}%`,
+                icon: '🔀'
+            });
+        }
+        if (kpiData.avg_release_delay !== undefined) {
+            phase2Items.push({
+                label: 'Release Delay',
+                value: `${kpiData.avg_release_delay.toFixed(1)}h`,
+                icon: '📦'
+            });
+        }
+
         if (phase2Items.length > 0) {
-            cardsHTML += '<h3 style="margin-top: 20px;">Phase 2 KPIs</h3><div class="kpi-cards">';
+            html += '<h4 style="margin: 20px 0 10px; color: var(--text-secondary); font-size: 0.9rem;">Phase 2 Metrics</h4>';
+            html += '<div class="kpi-cards">';
             phase2Items.forEach(item => {
-                cardsHTML += `
-                    <div class="kpi-card" style="border-left: 4px solid ${item.color};">
-                        <div class="kpi-icon">${item.icon}</div>
+                html += `
+                    <div class="kpi-card">
+                        <span class="kpi-icon">${item.icon}</span>
                         <div class="kpi-content">
                             <div class="kpi-label">${item.label}</div>
                             <div class="kpi-value">${item.value}</div>
@@ -516,25 +497,73 @@ class SchedulerApp {
                     </div>
                 `;
             });
-            cardsHTML += '</div>';
+            html += '</div>';
         }
 
-        container.innerHTML = cardsHTML;
+        // Phase 3 KPIs
+        const phase3Items = [];
+        if (kpiData.dependency_delay !== undefined) {
+            phase3Items.push({
+                label: 'Dependency Delay',
+                value: `${kpiData.dependency_delay.toFixed(1)}h`,
+                icon: '🔗'
+            });
+        }
+        if (kpiData.critical_path_length !== undefined) {
+            phase3Items.push({
+                label: 'Critical Path',
+                value: kpiData.critical_path_length,
+                icon: '⛓️'
+            });
+        }
+        if (kpiData.component_service_level !== undefined) {
+            phase3Items.push({
+                label: 'Component Service Lvl',
+                value: `${kpiData.component_service_level.toFixed(1)}%`,
+                icon: '📊'
+            });
+        }
+        if (kpiData.wip_explosion_factor !== undefined) {
+            phase3Items.push({
+                label: 'WIP Explosion Factor',
+                value: kpiData.wip_explosion_factor.toFixed(2),
+                icon: '💥'
+            });
+        }
+
+        if (phase3Items.length > 0) {
+            html += '<h4 style="margin: 20px 0 10px; color: var(--accent-success); font-size: 0.9rem;">Phase 3 Metrics</h4>';
+            html += '<div class="kpi-cards">';
+            phase3Items.forEach(item => {
+                html += `
+                    <div class="kpi-card">
+                        <span class="kpi-icon">${item.icon}</span>
+                        <div class="kpi-content">
+                            <div class="kpi-label">${item.label}</div>
+                            <div class="kpi-value">${item.value}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+        }
+
+        container.innerHTML = html;
     }
 
     displayVerification(verificationData) {
         const container = document.getElementById('verification-results');
         if (verificationData.passed) {
             container.innerHTML = `
-                <p class="success-message">✓ Schedule verification passed:</p>
-                <ul>
-                    <li>No machine has overlapping operations (respecting capacity)</li>
-                    <li>Operation sequence order is respected per order</li>
-                    ${verificationData.no_downtime_violations !== false ? '<li>No downtime violations</li>' : ''}
+                <p class="success-message">Schedule verification passed</p>
+                <ul style="margin-top: 10px; padding-left: 20px; color: var(--text-secondary);">
+                    <li>No machine capacity violations</li>
+                    <li>Operation sequence order respected</li>
+                    <li>No downtime violations</li>
                 </ul>
             `;
         } else {
-            let errorsHTML = '<p class="error-message">✗ Schedule verification failed:</p><ul>';
+            let errorsHTML = '<p class="error-message">Verification failed:</p><ul style="margin-top: 10px; padding-left: 20px; color: var(--accent-danger);">';
             verificationData.errors.forEach(error => {
                 errorsHTML += `<li>${error}</li>`;
             });
@@ -550,39 +579,28 @@ class SchedulerApp {
             this.chart.destroy();
         }
 
-        if (scheduleData.length === 0) {
-            this.chart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: ['No Data'],
-                    datasets: [{ label: 'No schedule data', data: [0], backgroundColor: '#95a5a6' }]
-                },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-            });
+        if (!scheduleData || scheduleData.length === 0) {
             return;
         }
 
         const machines = [...new Set(scheduleData.map(op => op.machine_id))].sort();
         const orders = [...new Set(scheduleData.map(op => op.order_id))];
+
         const colors = this.generateColors(orders.length);
         const orderColorMap = {};
-        orders.forEach((order, index) => { orderColorMap[order] = colors[index]; });
+        orders.forEach((order, index) => { orderColorMap[order] = colors[index % colors.length]; });
 
         const operationsByMachine = {};
         scheduleData.forEach(op => {
-            if (!operationsByMachine[op.machine_id]) operationsByMachine[op.machine_id] = [];
+            if (!operationsByMachine[op.machine_id]) {
+                operationsByMachine[op.machine_id] = [];
+            }
             operationsByMachine[op.machine_id].push(op);
-        });
-
-        const operationsByOrder = {};
-        scheduleData.forEach(op => {
-            if (!operationsByOrder[op.order_id]) operationsByOrder[op.order_id] = [];
-            operationsByOrder[op.order_id].push(op);
         });
 
         const chartData = { labels: machines, datasets: [] };
 
-        Object.keys(operationsByOrder).forEach(orderId => {
+        orders.slice(0, 20).forEach(orderId => {
             const data = machines.map(machine => {
                 const ops = operationsByMachine[machine] || [];
                 const orderOps = ops.filter(op => op.order_id === orderId);
@@ -594,9 +612,10 @@ class SchedulerApp {
             });
 
             chartData.datasets.push({
-                label: `Order ${orderId}`,
+                label: orderId,
                 data: data,
-                backgroundColor: orderColorMap[orderId]
+                backgroundColor: orderColorMap[orderId],
+                stack: 'stack'
             });
         });
 
@@ -608,12 +627,32 @@ class SchedulerApp {
                 maintainAspectRatio: false,
                 indexAxis: 'y',
                 plugins: {
-                    title: { display: true, text: 'Production Schedule (Machine View)' },
-                    legend: { position: 'right' }
+                    title: {
+                        display: true,
+                        text: 'Production Schedule - Machine View',
+                        color: '#f1f5f9'
+                    },
+                    legend: {
+                        display: false
+                    }
                 },
                 scales: {
-                    x: { beginAtZero: true, title: { display: true, text: 'Duration (hours)' } },
-                    y: { title: { display: true, text: 'Machine' } }
+                    x: {
+                        stacked: true,
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Duration (hours)',
+                            color: '#94a3b8'
+                        },
+                        ticks: { color: '#94a3b8' },
+                        grid: { color: 'rgba(255,255,255,0.1)' }
+                    },
+                    y: {
+                        stacked: true,
+                        ticks: { color: '#94a3b8' },
+                        grid: { color: 'rgba(255,255,255,0.05)' }
+                    }
                 }
             }
         });
@@ -626,34 +665,29 @@ class SchedulerApp {
             this.orderChart.destroy();
         }
 
-        if (scheduleData.length === 0) {
-            this.orderChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: ['No Data'],
-                    datasets: [{ label: 'No schedule data', data: [0], backgroundColor: '#95a5a6' }]
-                },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-            });
+        if (!scheduleData || scheduleData.length === 0) {
             return;
         }
 
         const orders = [...new Set(scheduleData.map(op => op.order_id))].sort();
         const machines = [...new Set(scheduleData.map(op => op.machine_id))].sort();
+
         const colors = this.generateColors(machines.length);
         const machineColorMap = {};
-        machines.forEach((machine, index) => { machineColorMap[machine] = colors[index]; });
+        machines.forEach((machine, index) => { machineColorMap[machine] = colors[index % colors.length]; });
 
         const operationsByOrder = {};
         scheduleData.forEach(op => {
-            if (!operationsByOrder[op.order_id]) operationsByOrder[op.order_id] = [];
+            if (!operationsByOrder[op.order_id]) {
+                operationsByOrder[op.order_id] = [];
+            }
             operationsByOrder[op.order_id].push(op);
         });
 
-        const chartData = { labels: orders, datasets: [] };
+        const chartData = { labels: orders.slice(0, 30), datasets: [] };
 
         machines.forEach(machine => {
-            const data = orders.map(order => {
+            const data = orders.slice(0, 30).map(order => {
                 const ops = operationsByOrder[order] || [];
                 const machineOps = ops.filter(op => op.machine_id === machine);
                 return machineOps.reduce((total, op) => {
@@ -678,46 +712,53 @@ class SchedulerApp {
                 maintainAspectRatio: false,
                 indexAxis: 'y',
                 plugins: {
-                    title: { display: true, text: 'Production Schedule (Order View)' },
-                    legend: { position: 'right' }
+                    title: {
+                        display: true,
+                        text: 'Production Schedule - Order View',
+                        color: '#f1f5f9'
+                    },
+                    legend: {
+                        position: 'right',
+                        labels: { color: '#94a3b8' }
+                    }
                 },
                 scales: {
-                    x: { beginAtZero: true, title: { display: true, text: 'Duration (hours)' } },
-                    y: { title: { display: true, text: 'Order' } }
+                    x: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Duration (hours)',
+                            color: '#94a3b8'
+                        },
+                        ticks: { color: '#94a3b8' },
+                        grid: { color: 'rgba(255,255,255,0.1)' }
+                    },
+                    y: {
+                        ticks: { color: '#94a3b8' },
+                        grid: { color: 'rgba(255,255,255,0.05)' }
+                    }
                 }
             }
         });
     }
 
     generateColors(count) {
+        const baseColors = [
+            '#00d4ff', '#7c3aed', '#10b981', '#f59e0b', '#ef4444',
+            '#ec4899', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316'
+        ];
         const colors = [];
         for (let i = 0; i < count; i++) {
-            const hue = (i * 360) / count;
-            const saturation = 70 + Math.random() * 30;
-            const lightness = 60 + Math.random() * 20;
-            colors.push(`hsl(${hue}, ${saturation}%, ${lightness}%)`);
+            colors.push(baseColors[i % baseColors.length]);
         }
         return colors;
     }
 
-    downloadSchedule() {
-        if (!this.sessionId) return;
-        window.location.href = `http://localhost:8000/download/${this.sessionId}/schedule`;
-    }
-
-    downloadChart() {
-        const activeChart = this.currentChart === 'machine' ? this.chart : this.orderChart;
-        if (!activeChart) {
-            alert('No chart to download.');
-            return;
+    showDependencySection() {
+        const depSection = document.getElementById('dependency-section');
+        if (depSection) {
+            depSection.style.display = 'block';
         }
-
-        const canvasId = this.currentChart === 'machine' ? 'gantt-chart' : 'order-gantt-chart';
-        const canvas = document.getElementById(canvasId);
-        const link = document.createElement('a');
-        link.download = `${this.currentChart}_gantt_chart.png`;
-        link.href = canvas.toDataURL('image/png');
-        link.click();
     }
 
     switchChartTab(chartType) {
@@ -735,53 +776,52 @@ class SchedulerApp {
         alert('Error: ' + message);
     }
 
-    showAllSections() {
-        const sections = document.querySelectorAll('main section');
-        sections.forEach(section => {
-            section.style.display = 'block';
-        });
+    showNextSection() {
+        // Simple implementation - scroll to next section
+        const sections = document.querySelectorAll('section');
+        let foundCurrent = false;
+
+        for (const section of sections) {
+            if (foundCurrent) {
+                section.scrollIntoView({ behavior: 'smooth' });
+                break;
+            }
+            if (section.style.display !== 'none') {
+                foundCurrent = true;
+            }
+        }
     }
 
-    showNextSection() {
-        if (this.currentSectionIndex >= 0) {
-            const currentSection = this.sections[this.currentSectionIndex];
-            document.getElementById(`${currentSection}-section`).style.display = 'none';
-        }
+    downloadSchedule() {
+        if (!this.sessionId) return;
+        window.location.href = `http://localhost:8000/download/${this.sessionId}/schedule`;
+    }
 
-        this.currentSectionIndex++;
-
-        if (this.currentSectionIndex >= this.sections.length) {
-            this.showAllSections();
-            document.getElementById('next-btn').disabled = true;
+    downloadChart() {
+        const activeChart = this.currentChart === 'machine' ? this.chart : this.orderChart;
+        if (!activeChart) {
+            alert('No chart to download.');
             return;
         }
 
-        const nextSection = this.sections[this.currentSectionIndex];
-        document.getElementById(`${nextSection}-section`).style.display = 'block';
-
-        if (this.currentSectionIndex >= this.sections.length - 1) {
-            document.getElementById('next-btn').textContent = 'Finish';
-            document.getElementById('next-btn').disabled = true;
-        } else {
-            document.getElementById('next-btn').textContent = 'Next Step →';
-        }
+        const canvasId = this.currentChart === 'machine' ? 'gantt-chart' : 'order-gantt-chart';
+        const canvas = document.getElementById(canvasId);
+        const link = document.createElement('a');
+        link.download = `${this.currentChart}_schedule.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
     }
 
     resetApp() {
         this.sessionId = null;
-        this.currentSectionIndex = -1;
         this.currentChart = 'machine';
         this.phase15Data = null;
+        this.scheduleData = null;
 
         if (this.chart) { this.chart.destroy(); this.chart = null; }
         if (this.orderChart) { this.orderChart.destroy(); this.orderChart = null; }
 
-        document.querySelectorAll('.chart-tab').forEach(tab => {
-            tab.classList.toggle('active', tab.dataset.chart === 'machine');
-        });
-        document.getElementById('machine-gantt-container').style.display = 'block';
-        document.getElementById('order-gantt-container').style.display = 'none';
-
+        // Reset file inputs
         document.getElementById('machines-file').value = '';
         document.getElementById('products-file').value = '';
         document.getElementById('routing-file').value = '';
@@ -790,30 +830,59 @@ class SchedulerApp {
         document.getElementById('setup-file').value = '';
         document.getElementById('sections-file').value = '';
         document.getElementById('buffers-file').value = '';
+        document.getElementById('orders-multilevel-file').value = '';
+        document.getElementById('order-links-file').value = '';
+        document.getElementById('bom-file').value = '';
 
-        this.hideAllSections();
-        document.getElementById('features-section').style.display = 'block';
-        document.getElementById('upload-section').style.display = 'block';
-
+        // Reset progress steps
         document.querySelectorAll('.progress-tracker .step').forEach(step => {
             step.className = 'step';
-            if (step.id === 'step-upload') step.textContent = '⬜ Upload';
-            else if (step.id === 'step-validation') step.textContent = '⬜ Validation';
-            else if (step.id === 'step-jobs') step.textContent = '⬜ Job Building';
-            else if (step.id === 'step-scheduling') step.textContent = '⬜ Scheduling';
-            else if (step.id === 'step-verification') step.textContent = '⬜ Verification';
-            else if (step.id === 'step-kpi') step.textContent = '⬜ KPI Calculation';
-            else if (step.id === 'step-visualization') step.textContent = '⬜ Visualization';
         });
 
-        document.getElementById('validation-results').innerHTML = '<p>Please upload files to see validation results.</p>';
-        document.getElementById('jobs-results').innerHTML = '<p>Please upload and validate files to see job building results.</p>';
-        document.getElementById('scheduling-results').innerHTML = '<p>Please upload and validate files to see scheduling results.</p>';
-        document.getElementById('verification-results').innerHTML = '<p>Please upload and validate files to see verification results.</p>';
-        document.getElementById('kpi-results').innerHTML = '<p>Please upload and validate files to see KPI results.</p>';
+        // Reset result containers
+        document.getElementById('validation-results').innerHTML = `
+            <div class="empty-state">
+                <span class="empty-icon">📋</span>
+                <p>Awaiting file upload...</p>
+            </div>
+        `;
+        document.getElementById('jobs-results').innerHTML = `
+            <div class="empty-state">
+                <span class="empty-icon">⚙️</span>
+                <p>Jobs will appear after successful validation</p>
+            </div>
+        `;
+        document.getElementById('scheduling-results').innerHTML = `
+            <div class="empty-state">
+                <span class="empty-icon">📅</span>
+                <p>Schedule will be generated after job building</p>
+            </div>
+        `;
+        document.getElementById('verification-results').innerHTML = `
+            <div class="empty-state">
+                <span class="empty-icon">✅</span>
+                <p>Verification results will appear here</p>
+            </div>
+        `;
+        document.getElementById('kpi-results').innerHTML = `
+            <div class="empty-state">
+                <span class="empty-icon">📊</span>
+                <p>KPI metrics will appear after scheduling</p>
+            </div>
+        `;
 
-        this.setActionButtonsDisabled(true);
+        // Hide dependency section
+        const depSection = document.getElementById('dependency-section');
+        if (depSection) {
+            depSection.style.display = 'none';
+        }
+
+        // Reset buttons
         document.getElementById('next-btn').disabled = true;
+        this.setActionButtonsDisabled(true);
+
+        // Scroll to top
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 }
 

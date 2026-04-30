@@ -1,4 +1,103 @@
 import pandas as pd
+from collections import defaultdict, deque
+
+
+def topological_sort_orders(order_links_df, orders_df):
+    """
+    Perform topological sort on orders using Kahn's algorithm.
+    Returns orders in child-first order (children processed before parents).
+
+    Args:
+        order_links_df: DataFrame with parent_order_id, child_order_id
+        orders_df: DataFrame with order_id, level
+
+    Returns:
+        list: order_ids in topological order (child-first)
+    """
+    if order_links_df is None or order_links_df.empty:
+        # Fallback: sort by level DESC (heuristic)
+        if 'level' in orders_df.columns:
+            return orders_df.sort_values('level', ascending=False)['order_id'].tolist()
+        # Last resort: sort by due_date
+        if 'due_date' in orders_df.columns:
+            return orders_df.sort_values('due_date')['order_id'].tolist()
+        return orders_df['order_id'].tolist()
+
+    # Build parent->children and child->parent mappings
+    children_map = defaultdict(list)
+    parents_map = {}
+    all_order_ids = set()
+
+    for _, row in order_links_df.iterrows():
+        parent = row['parent_order_id']
+        child = row['child_order_id']
+        children_map[parent].append(child)
+        parents_map[child] = parent
+        all_order_ids.add(parent)
+        all_order_ids.add(child)
+
+    # Find root nodes (no parents) - these are TOP-level orders
+    root_nodes = all_order_ids - set(parents_map.keys())
+
+    # Build in-degree map
+    in_degree = defaultdict(int)
+    for parent, children in children_map.items():
+        for child in children:
+            in_degree[child] += 1
+
+    # Kahn's algorithm with queue - processes roots first, then children
+    queue = deque(sorted(root_nodes))  # sorted for determinism
+    topo_order = []
+
+    while queue:
+        node = queue.popleft()
+        topo_order.append(node)
+        for child in sorted(children_map.get(node, [])):
+            in_degree[child] -= 1
+            if in_degree[child] == 0:
+                queue.append(child)
+
+    # If cycle detected (not all nodes in topo_order), use fallback
+    if len(topo_order) != len(all_order_ids):
+        remaining = all_order_ids - set(topo_order)
+        # Fallback: sort by level DESC for remaining
+        remaining_df = orders_df[orders_df['order_id'].isin(remaining)]
+        fallback = remaining_df.sort_values('level', ascending=False)['order_id'].tolist()
+        topo_order.extend(fallback)
+
+    # REVERSE the order so children come BEFORE parents (child-first)
+    topo_order.reverse()
+    return topo_order
+
+
+def build_dependency_graph(order_links_df, orders_df):
+    """
+    Build dependency graph from order_links.
+
+    Args:
+        order_links_df: DataFrame with parent_order_id, child_order_id
+        orders_df: DataFrame with order_id, level
+
+    Returns:
+        tuple: (order_children_map, order_parents_map, topo_sorted_ids)
+    """
+    order_children_map = {}
+    order_parents_map = {}
+
+    if order_links_df is not None and not order_links_df.empty:
+        for _, row in order_links_df.iterrows():
+            parent = row['parent_order_id']
+            child = row['child_order_id']
+            if parent not in order_children_map:
+                order_children_map[parent] = []
+            order_children_map[parent].append(child)
+            order_parents_map[child] = parent
+
+    # Get topological order (child-first)
+    topo_sorted_ids = topological_sort_orders(order_links_df, orders_df)
+
+    return order_children_map, order_parents_map, topo_sorted_ids
+
 
 def get_earliest_slot(machine_intervals, machine_capacity, current_time, duration):
     """
@@ -191,38 +290,43 @@ def select_best_machine(candidate_machines, machine_intervals, machine_capacity,
 
 def run_scheduler(data, jobs_df=None):
     """
-    Run a Phase 2 scheduling algorithm with alternate machine selection and release constraints.
+    Run a Phase 2/3 scheduling algorithm with alternate machine selection and release constraints.
+
+    Phase 3 adds parent-child dependency constraints:
+    - Child orders must complete before parent can start
+    - Uses topological sort to ensure proper scheduling order
 
     Steps:
-    1. Sort orders by due_date (ascending)
-    2. For each order:
-       - current_time = max(order_date, release_time, material_available_time)
-       3. For each operation:
-          - Select best machine from candidate_machines (earliest completion)
-          - Add setup time if transitioning products
-          - Schedule on best machine with capacity awareness
-          - Update machine state
-       4. Store result
+    1. Build dependency graph from order_links (Phase 3)
+    2. Sort jobs by topological order (child-first) or due_date (Phase 2)
+    3. For each job:
+       - current_time = max(order_date, release_time, material_available_time, dependency_ready_time)
+       - Select best machine from candidate_machines (earliest completion)
+       - Add setup time if transitioning products
+       - Schedule on best machine with capacity awareness
+       - Update machine state
+    4. Store result
 
     Args:
         data (dict): Dictionary of DataFrames with keys:
-                     'orders', 'routing_alt', 'machines'
-                     (Phase 2 uses routing_alt for multi-machine routing)
+                     'orders' or 'orders_multi', 'routing_alt', 'machines'
+                     Optional: 'order_links' (Phase 3)
         jobs_df (DataFrame, optional): Pre-built jobs from job_builder.
                                        If not provided, builds jobs internally.
 
     Returns:
         pandas.DataFrame: DataFrame with columns:
                           order_id, operation_seq, machine_id, start, end, is_primary
+                          [, level, parent_order_id] (Phase 3)
                           where start and end are Timestamps.
     """
     # Extract DataFrames
-    orders_df = data['orders']
+    orders_df = data.get('orders_multi', data.get('orders'))
     machines_df = data['machines']
 
-    # Get optional calendar data
+    # Get optional Phase 3 data
+    order_links_df = data.get('order_links', None)
     calendar_df = data.get('machine_calendar', None)
-    # Get optional setup matrix (pre-indexed for fast lookup)
     setup_df = data.get('setup_matrix', None)
     setup_dict = build_setup_dict(setup_df)
 
@@ -231,13 +335,33 @@ def run_scheduler(data, jobs_df=None):
         from job_builder import build_jobs
         jobs_df = build_jobs(data)
 
-    # 1. Sort jobs by due_date (need to join with orders)
+    # Phase 3: Build dependency graph and get topological order
+    order_children_map, order_parents_map, topo_sorted_ids = build_dependency_graph(order_links_df, orders_df)
+
+    # Phase 3: Track order completion times for dependency tracking
+    order_completion_time = {}
+
+    # Join jobs with orders for constraint information
+    orders_cols = ['order_id', 'due_date', 'release_time', 'material_available_time', 'order_date']
+    if 'level' in orders_df.columns:
+        orders_cols.extend(['level', 'parent_order_id'])
+    orders_cols = [c for c in orders_cols if c in orders_df.columns]
+
     jobs_with_orders = jobs_df.merge(
-        orders_df[['order_id', 'due_date', 'release_time', 'material_available_time', 'order_date']],
+        orders_df[orders_cols],
         on='order_id',
         how='left'
     )
-    jobs_sorted = jobs_with_orders.sort_values(['due_date', 'order_id', 'operation_seq'], ascending=[True, True, True])
+
+    # Add topo sort order as primary key, then due_date as secondary
+    # This ensures child-first ordering for Phase 3
+    jobs_with_orders['topo_order'] = jobs_with_orders['order_id'].map(
+        {oid: i for i, oid in enumerate(topo_sorted_ids)}
+    )
+    jobs_sorted = jobs_with_orders.sort_values(
+        ['topo_order', 'due_date', 'order_id', 'operation_seq'],
+        ascending=[True, True, True, True]
+    )
 
     # 2. Initialize machine state with capacity support
     machine_intervals = {row['machine_id']: [] for _, row in machines_df.iterrows()}
@@ -256,7 +380,7 @@ def run_scheduler(data, jobs_df=None):
     # This ensures operations within an order are sequential
     order_end_times = {}
 
-    # 3. Process each job in due_date order
+    # 3. Process each job in topological/due_date order
     for _, job in jobs_sorted.iterrows():
         order_id = job['order_id']
         product_id = job['product_id']
@@ -269,13 +393,22 @@ def run_scheduler(data, jobs_df=None):
         material_time = job.get('material_available_time', order_date)
         constraint_time = apply_release_constraint(order_date, release_time, material_time)
 
+        # Phase 3: Get dependency_ready_time from child completion times
+        dependency_ready_time = pd.Timestamp(0)
+        children = order_children_map.get(order_id, [])
+        if children:
+            child_completion_times = [order_completion_time[c] for c in children if c in order_completion_time]
+            if child_completion_times:
+                dependency_ready_time = max(child_completion_times)
+
         # For subsequent operations of the same order, start after the previous operation ended
-        # Otherwise use the constraint time
+        # Otherwise use the constraint time (including dependency_ready_time for first op)
         previous_end = order_end_times.get(order_id)
         if previous_end is not None:
             current_time = previous_end
         else:
-            current_time = constraint_time
+            # First operation: use max of constraint_time and dependency_ready_time
+            current_time = max(constraint_time, dependency_ready_time)
 
         # Phase 2: Select best machine from candidates
         best_machine, start_time, end_time, is_primary = select_best_machine(
@@ -306,14 +439,22 @@ def run_scheduler(data, jobs_df=None):
         end_time = adjust_to_calendar(best_machine, end_time, calendar_df)
 
         # Record the scheduled operation
-        scheduled_ops.append({
+        op_data = {
             'order_id': order_id,
             'operation_seq': operation_seq,
             'machine_id': best_machine,
             'start': start_time,
             'end': end_time,
             'is_primary': is_primary
-        })
+        }
+
+        # Phase 3: Add hierarchy metadata to output
+        if 'level' in job and pd.notna(job.get('level')):
+            op_data['level'] = job['level']
+        if 'parent_order_id' in job and pd.notna(job.get('parent_order_id')):
+            op_data['parent_order_id'] = job['parent_order_id']
+
+        scheduled_ops.append(op_data)
 
         # Add this interval to the machine's active intervals
         machine_intervals[best_machine].append((start_time, end_time))
@@ -323,6 +464,10 @@ def run_scheduler(data, jobs_df=None):
 
         # Track the end time for this order (used for chaining operations within the order)
         order_end_times[order_id] = end_time
+
+        # Phase 3: Update order completion time (max of all operation end times)
+        if order_id not in order_completion_time or end_time > order_completion_time[order_id]:
+            order_completion_time[order_id] = end_time
 
     # Return the scheduled operations as a DataFrame
     return pd.DataFrame(scheduled_ops)
@@ -336,6 +481,7 @@ def save_schedule(df_schedule, file_path='schedule.csv'):
     Args:
         df_schedule (pandas.DataFrame): DataFrame with columns:
                                         order_id, operation_seq, machine_id, start, end, is_primary
+                                        [, level, parent_order_id] (Phase 3)
                                         where start and end are Timestamps.
         file_path (str or Path): The path where the CSV file should be saved.
                                 Defaults to 'schedule.csv'.
@@ -347,8 +493,10 @@ def save_schedule(df_schedule, file_path='schedule.csv'):
     df_to_save = df_schedule.copy()
 
     # Convert the timestamp columns to a string format for consistent output
-    df_to_save['start'] = df_to_save['start'].dt.strftime('%Y-%m-%d %H:%M:%S')
-    df_to_save['end'] = df_to_save['end'].dt.strftime('%Y-%m-%d %H:%M:%S')
+    if 'start' in df_to_save.columns and pd.api.types.is_datetime64_any_dtype(df_to_save['start']):
+        df_to_save['start'] = df_to_save['start'].dt.strftime('%Y-%m-%d %H:%M:%S')
+    if 'end' in df_to_save.columns and pd.api.types.is_datetime64_any_dtype(df_to_save['end']):
+        df_to_save['end'] = df_to_save['end'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
     # Ensure the directory exists
     import os
@@ -363,18 +511,23 @@ def save_schedule(df_schedule, file_path='schedule.csv'):
     print(f"File exists after save: {os.path.exists(str(file_path))}")
 
 
-def verify_schedule(df_schedule, machines_df=None):
+def verify_schedule(df_schedule, machines_df=None, order_links_df=None, orders_df=None):
     """
-    Verify the schedule for two conditions:
+    Verify the schedule for conditions:
     1. No machine has overlapping operations beyond its capacity.
     2. For each order, operation_seq order is respected.
+    3. (Phase 3) For every parent-child link, child ends before parent starts.
+    4. (Phase 3) Level consistency: child.level > parent.level
 
     Args:
         df_schedule (pandas.DataFrame): DataFrame with columns:
                                         order_id, operation_seq, machine_id, start, end, is_primary
+                                        [, level, parent_order_id] (Phase 3)
                                         where start and end are Timestamps or strings in datetime format.
         machines_df (pandas.DataFrame, optional): DataFrame with machine_id and capacity columns.
                                                   If not provided, capacity defaults to 1 for all machines.
+        order_links_df (pandas.DataFrame, optional): Phase 3 order links for dependency validation.
+        orders_df (pandas.DataFrame, optional): Phase 3 orders with level for level validation.
 
     Returns:
         tuple: (bool, list) where bool is True if all checks pass, False otherwise,
@@ -469,6 +622,45 @@ def verify_schedule(df_schedule, machines_df=None):
                 break
             prev_start = row['start']
             prev_op_seq = row['operation_seq']
+
+    # Check 3 (Phase 3): Dependency check - child_end <= parent_start
+    if order_links_df is not None and not order_links_df.empty:
+        # Get first operation start time for each order (parent start)
+        parent_starts = df.groupby('order_id')['start'].min().to_dict()
+        # Get last operation end time for each order (child end)
+        child_ends = df.groupby('order_id')['end'].max().to_dict()
+
+        for _, link in order_links_df.iterrows():
+            parent_id = link['parent_order_id']
+            child_id = link['child_order_id']
+
+            if parent_id in parent_starts and child_id in child_ends:
+                parent_start = parent_starts[parent_id]
+                child_end = child_ends[child_id]
+
+                if child_end > parent_start:
+                    errors.append(
+                        f"Dependency violation: child order {child_id} (ends {child_end}) "
+                        f"must complete before parent {parent_id} starts ({parent_start})"
+                    )
+
+    # Check 4 (Phase 3): Level consistency - child.level > parent.level
+    if order_links_df is not None and orders_df is not None and 'level' in df.columns and 'level' in orders_df.columns:
+        order_levels = orders_df.set_index('order_id')['level'].to_dict()
+
+        for _, link in order_links_df.iterrows():
+            parent_id = link['parent_order_id']
+            child_id = link['child_order_id']
+
+            if parent_id in order_levels and child_id in order_levels:
+                parent_level = order_levels[parent_id]
+                child_level = order_levels[child_id]
+
+                if not (child_level > parent_level):
+                    errors.append(
+                        f"Level violation: child {child_id} (level {child_level}) must have "
+                        f"level > parent {parent_id} (level {parent_level})"
+                    )
 
     if errors:
         return False, errors

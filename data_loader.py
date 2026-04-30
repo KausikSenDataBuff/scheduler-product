@@ -66,7 +66,85 @@ def load_data(data_dir=None):
     load_if_exists('sections.csv', 'sections')
     load_if_exists('buffers.csv', 'buffers')
 
+    # ---- Optional Phase 3 files (multi-level orders) ----
+    load_if_exists('orders_multilevel.csv', 'orders_multi',
+                   datetime_cols=['order_date', 'due_date', 'release_time', 'material_available_time'])
+    load_if_exists('order_links.csv', 'order_links')
+    load_if_exists('bom.csv', 'bom')
+
     return dataframes
+
+def load_orders_multilevel(data_dir=None):
+    """
+    Load orders_multilevel.csv - Phase 3 multi-level orders with hierarchy.
+
+    Columns: order_id,product_id,quantity,order_date,due_date,release_time,
+             material_available_time,penalty_per_hour,level
+
+    Parameters:
+        data_dir (str, optional): The directory containing the CSV files.
+
+    Returns:
+        pandas.DataFrame or None: DataFrame with multi-level orders, or None if file not found.
+    """
+    if data_dir is None:
+        data_dir = os.path.join(os.path.dirname(__file__), 'data')
+
+    file_path = os.path.join(data_dir, 'orders_multilevel.csv')
+    if not os.path.exists(file_path):
+        return None
+
+    df = pd.read_csv(file_path)
+    datetime_cols = ['order_date', 'due_date', 'release_time', 'material_available_time']
+    for col in datetime_cols:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors='coerce')
+    return df
+
+
+def load_order_links(data_dir=None):
+    """
+    Load order_links.csv - Phase 3 parent-child order relationships.
+
+    Columns: parent_order_id,child_order_id
+
+    Parameters:
+        data_dir (str, optional): The directory containing the CSV files.
+
+    Returns:
+        pandas.DataFrame or None: DataFrame with order links, or None if file not found.
+    """
+    if data_dir is None:
+        data_dir = os.path.join(os.path.dirname(__file__), 'data')
+
+    file_path = os.path.join(data_dir, 'order_links.csv')
+    if not os.path.exists(file_path):
+        return None
+
+    return pd.read_csv(file_path)
+
+
+def load_bom(data_dir=None):
+    """
+    Load bom.csv - Phase 3 Bill of Materials for product hierarchy.
+
+    Columns: parent_product,child_product,quantity
+
+    Parameters:
+        data_dir (str, optional): The directory containing the CSV files.
+
+    Returns:
+        pandas.DataFrame or None: DataFrame with BOM data, or None if file not found.
+    """
+    if data_dir is None:
+        data_dir = os.path.join(os.path.dirname(__file__), 'data')
+
+    file_path = os.path.join(data_dir, 'bom.csv')
+    if not os.path.exists(file_path):
+        return None
+
+    return pd.read_csv(file_path)
+
 
 if __name__ == "__main__":
     # For testing

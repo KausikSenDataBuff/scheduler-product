@@ -55,9 +55,15 @@ def compute_completion(df_schedule, orders_df=None):
         return completion_df
 
 
-def compute_kpi_metrics(df_schedule, orders_df):
+def compute_kpi_metrics(df_schedule, orders_df, order_links_df=None, orders_multi_df=None, original_orders_count=None):
     """
     Compute key performance indicators from the schedule and orders data.
+
+    Phase 3 adds:
+    - dependency_delay: parent_start - max(child_completion)
+    - critical_path_length: longest chain per top-level order
+    - component_service_level: % of child orders completed before parent need
+    - wip_explosion_factor: total_orders_multilevel / original_orders
 
     Args:
         df_schedule (pandas.DataFrame): DataFrame with columns:
@@ -65,6 +71,9 @@ def compute_kpi_metrics(df_schedule, orders_df):
                                         where start and end are Timestamps or strings in datetime format.
         orders_df (pandas.DataFrame): DataFrame with order information, must contain
                                       'order_id' and 'due_date' columns.
+        order_links_df (pandas.DataFrame, optional): Phase 3 order links for dependency KPIs.
+        orders_multi_df (pandas.DataFrame, optional): Phase 3 multi-level orders.
+        original_orders_count (int, optional): Original order count for WIP explosion.
 
     Returns:
         dict: Dictionary containing KPI metrics:
@@ -76,6 +85,10 @@ def compute_kpi_metrics(df_schedule, orders_df):
               - avg_utilization: average machine utilization %
               - alt_machine_usage_pct: % of jobs not using primary machine
               - avg_release_delay: avg delay due to release constraint (hours, first operation only)
+              - dependency_delay: Phase 3 - avg delay from dependency constraints
+              - critical_path_length: Phase 3 - longest parent-child chain
+              - component_service_level: Phase 3 - % child orders meeting parent need
+              - wip_explosion_factor: Phase 3 - ratio of multi-level to flat orders
     """
     # Compute completion times with delay
     kpi_df = compute_completion(df_schedule, orders_df)
@@ -96,7 +109,7 @@ def compute_kpi_metrics(df_schedule, orders_df):
     # Phase 2: Release delay
     avg_release_delay = compute_release_delay(df_schedule, orders_df)
 
-    return {
+    result = {
         'total_orders': total_orders,
         'on_time_orders': int(on_time_orders),
         'late_orders': int(late_orders),
@@ -106,6 +119,18 @@ def compute_kpi_metrics(df_schedule, orders_df):
         'alt_machine_usage_pct': float(alt_machine_usage_pct),
         'avg_release_delay': float(avg_release_delay)
     }
+
+    # Phase 3 KPIs
+    if order_links_df is not None:
+        result['dependency_delay'] = float(compute_dependency_delay(df_schedule, order_links_df))
+        result['critical_path_length'] = int(compute_critical_path_length(df_schedule, orders_df, order_links_df))
+        result['component_service_level'] = float(compute_component_service_level(df_schedule, orders_df, order_links_df))
+
+    if orders_multi_df is not None:
+        orig_count = original_orders_count if original_orders_count else len(orders_df)
+        result['wip_explosion_factor'] = float(compute_wip_explosion_factor(orders_multi_df, orig_count))
+
+    return result
 
 
 def compute_machine_utilization(df_schedule, orders_df=None):
@@ -221,6 +246,187 @@ def compute_release_delay(df_schedule, orders_df):
 
     avg_delay = constrained['release_delay'].mean()
     return avg_delay
+
+
+def compute_dependency_delay(df_schedule, order_links_df):
+    """
+    Calculate Phase 3 dependency delay.
+
+    For each parent order, compute: parent_start - max(child_completion_times)
+    Average across all parent orders that have children.
+
+    Args:
+        df_schedule (pandas.DataFrame): DataFrame with order_id, operation_seq, start, end
+        order_links_df (pandas.DataFrame): DataFrame with parent_order_id, child_order_id
+
+    Returns:
+        float: Average dependency delay in hours
+    """
+    if order_links_df is None or order_links_df.empty:
+        return 0.0
+
+    df = df_schedule.copy()
+    if not pd.api.types.is_datetime64_any_dtype(df['end']):
+        df['end'] = pd.to_datetime(df['end'])
+    if not pd.api.types.is_datetime64_any_dtype(df['start']):
+        df['start'] = pd.to_datetime(df['start'])
+
+    # Get first operation start time for each order (parent start)
+    parent_starts = df.groupby('order_id')['start'].min()
+    # Get last operation end time for each order (child completion)
+    child_ends = df.groupby('order_id')['end'].max()
+
+    delays = []
+    for _, link in order_links_df.iterrows():
+        parent_id = link['parent_order_id']
+        child_id = link['child_order_id']
+
+        if parent_id in parent_starts.index and child_id in child_ends.index:
+            parent_start = parent_starts[parent_id]
+            child_end = child_ends[child_id]
+            delay = (parent_start - child_end).total_seconds() / 3600.0
+            delays.append(delay)
+
+    if not delays:
+        return 0.0
+
+    return sum(delays) / len(delays)
+
+
+def compute_critical_path_length(df_schedule, orders_df, order_links_df):
+    """
+    Calculate Phase 3 critical path length.
+
+    For each top-level order (level=0), find the longest chain to leaf.
+    Returns the maximum chain length across all top-level orders.
+
+    Args:
+        df_schedule (pandas.DataFrame): DataFrame with order_id, operation_seq, start, end
+        orders_df (pandas.DataFrame): DataFrame with order_id, level
+        order_links_df (pandas.DataFrame): DataFrame with parent_order_id, child_order_id
+
+    Returns:
+        int: Maximum critical path length (number of orders in longest chain)
+    """
+    if order_links_df is None or order_links_df.empty:
+        return 0
+
+    if orders_df is None or 'level' not in orders_df.columns:
+        return 0
+
+    # Build parent->children mapping
+    children_map = {}
+    for _, row in order_links_df.iterrows():
+        parent = row['parent_order_id']
+        child = row['child_order_id']
+        if parent not in children_map:
+            children_map[parent] = []
+        children_map[parent].append(child)
+
+    # Build child->parent mapping
+    parents_map = {}
+    for _, row in order_links_df.iterrows():
+        parents_map[row['child_order_id']] = row['parent_order_id']
+
+    # Find top-level orders (level=0)
+    top_level_orders = orders_df[orders_df['level'] == 0]['order_id'].tolist()
+
+    def get_chain_length(order_id, visited=None):
+        """Recursively find longest chain from this order to leaf."""
+        if visited is None:
+            visited = set()
+
+        if order_id in visited:
+            return 0  # Cycle detected
+        visited.add(order_id)
+
+        children = children_map.get(order_id, [])
+        if not children:
+            return 1  # Leaf node
+
+        max_child_len = 0
+        for child in children:
+            child_len = get_chain_length(child, visited.copy())
+            max_child_len = max(max_child_len, child_len)
+
+        return 1 + max_child_len
+
+    max_path = 0
+    for order_id in top_level_orders:
+        path_len = get_chain_length(order_id)
+        max_path = max(max_path, path_len)
+
+    return max_path
+
+
+def compute_component_service_level(df_schedule, orders_df, order_links_df):
+    """
+    Calculate Phase 3 component service level.
+
+    Percentage of child orders that completed before their parent needed them.
+    (child_end <= parent_start)
+
+    Args:
+        df_schedule (pandas.DataFrame): DataFrame with order_id, start, end
+        orders_df (pandas.DataFrame): DataFrame with order_id
+        order_links_df (pandas.DataFrame): DataFrame with parent_order_id, child_order_id
+
+    Returns:
+        float: Percentage of child orders meeting service level (0-100)
+    """
+    if order_links_df is None or order_links_df.empty:
+        return 100.0
+
+    df = df_schedule.copy()
+    if not pd.api.types.is_datetime64_any_dtype(df['end']):
+        df['end'] = pd.to_datetime(df['end'])
+    if not pd.api.types.is_datetime64_any_dtype(df['start']):
+        df['start'] = pd.to_datetime(df['start'])
+
+    # Get first operation start time for each order
+    parent_starts = df.groupby('order_id')['start'].min()
+    # Get last operation end time for each order
+    child_ends = df.groupby('order_id')['end'].max()
+
+    met_count = 0
+    total_count = 0
+
+    for _, link in order_links_df.iterrows():
+        parent_id = link['parent_order_id']
+        child_id = link['child_order_id']
+
+        if parent_id in parent_starts.index and child_id in child_ends.index:
+            total_count += 1
+            parent_start = parent_starts[parent_id]
+            child_end = child_ends[child_id]
+
+            if child_end <= parent_start:
+                met_count += 1
+
+    if total_count == 0:
+        return 100.0
+
+    return (met_count / total_count) * 100.0
+
+
+def compute_wip_explosion_factor(orders_multi_df, original_orders_count):
+    """
+    Calculate Phase 3 WIP explosion factor.
+
+    Ratio of total multi-level orders to original flat orders.
+
+    Args:
+        orders_multi_df (pandas.DataFrame): Multi-level orders DataFrame
+        original_orders_count (int): Count of original flat orders
+
+    Returns:
+        float: WIP explosion factor (>1 means hierarchy created more orders)
+    """
+    if orders_multi_df is None or original_orders_count == 0:
+        return 1.0
+
+    multi_count = len(orders_multi_df)
+    return multi_count / original_orders_count
 
 
 if __name__ == "__main__":

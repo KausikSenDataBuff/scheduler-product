@@ -2,6 +2,56 @@
 
 ## [Unreleased]
 
+### Phase 3 Integration
+
+#### Backend Updates (`backend_api.py`)
+- Added Phase 3 file uploads: `orders_multilevel`, `order_links`, `bom`
+- Added Phase 3 validators: `validate_bom`, `validate_order_links`, `validate_orders_multilevel`
+- Updated `compute_kpi_metrics()` to pass Phase 3 parameters:
+  - `order_links_df`, `orders_multi_df`, `original_orders_count`
+- Returns `phase3_summary` in upload response
+
+#### Frontend Updates (`frontend/index.html`, `frontend/script.js`)
+- Added Phase 3 file input fields (orders_multilevel.csv, order_links.csv, bom.csv)
+- Added `formatPhase3Summary()` to display Phase 3 upload confirmation
+- Added Phase 3 KPIs to dashboard:
+  - `dependency_delay` - parent start vs child completion delay
+  - `critical_path_length` - longest parent-child chain
+  - `component_service_level` - % child orders meeting parent need
+  - `wip_explosion_factor` - multi-level vs flat order ratio
+- Updated `resetApp()` to clear Phase 3 file inputs
+
+#### Files Modified
+- `backend_api.py` - Phase 3 wiring
+- `frontend/index.html` - Phase 3 file inputs
+- `frontend/script.js` - Phase 3 file uploads and KPI display
+
+---
+
+## Version 2.1.0 - Phase 3: Multi-Level Orders & BOM (Partial)
+
+### Phase 3 Backend Complete
+The Phase 3 backend is now fully wired up through the API:
+
+- **data_loader.py**: Loads `orders_multilevel.csv`, `order_links.csv`, `bom.csv`
+- **validator.py**: `validate_bom()`, `validate_order_links()`, `validate_orders_multilevel()` functional
+- **scheduler.py**: `topological_sort_orders()`, `build_dependency_graph()`, dependency-aware scheduling
+- **kpi.py**: `compute_dependency_delay()`, `compute_critical_path_length()`, `compute_component_service_level()`, `compute_wip_explosion_factor()` functional
+- **frontend/script.js**: Displays Phase 3 KPIs in dashboard
+
+### Phase 3 Validators
+- `validate_bom()` - No self-loops, no cycles (DFS), all products exist
+- `validate_order_links()` - All order_ids exist, no cycles (Kahn's algorithm)
+- `validate_orders_multilevel()` - level >= 0, parent_order_id valid, consistency with order_links
+
+### Phase 3 KPIs
+| Metric | Description |
+|--------|-------------|
+| `dependency_delay` | Avg parent_start - max(child_completion) (hrs) |
+| `critical_path_length` | Longest chain per top-level order |
+| `component_service_level` | % child orders completed before parent need |
+| `wip_explosion_factor` | total_orders_multilevel / original_orders |
+
 ### Bug Fixes
 
 #### Backend File Naming (Phase 2 Data)

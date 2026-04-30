@@ -11,10 +11,15 @@ app = FastAPI(title="Scheduler Product API", description="API for the production
 
 # Import backend modules
 from data_loader import load_data
-from validator import validate_foreign_keys, validate_nulls
+from validator import (
+    validate_foreign_keys, validate_nulls,
+    validate_routing_alternate, validate_orders_phase2,
+    validate_bom, validate_order_links, validate_orders_multilevel
+)
 from job_builder import build_jobs, initialize_machine_state
 from scheduler import run_scheduler, save_schedule, verify_schedule
 from kpi import compute_kpi_metrics
+import pandas as pd
 
 # Create directories for storing uploaded files and sessions
 UPLOAD_DIR = Path("uploads")
@@ -34,7 +39,10 @@ async def upload_files(
     machine_calendar: UploadFile = File(None),
     setup_matrix: UploadFile = File(None),
     sections: UploadFile = File(None),
-    buffers: UploadFile = File(None)
+    buffers: UploadFile = File(None),
+    orders_multilevel: UploadFile = File(None),
+    order_links: UploadFile = File(None),
+    bom: UploadFile = File(None)
 ):
     """
     Upload CSV files and validate them.
@@ -74,11 +82,41 @@ async def upload_files(
                 shutil.copyfileobj(file.file, buffer)
             phase15_summary[f"{name}_uploaded"] = True
 
+    # Save optional Phase 3 files
+    phase3_mapping = {
+        "orders_multilevel": orders_multilevel,
+        "order_links": order_links,
+        "bom": bom
+    }
+
+    phase3_summary = {}
+    for name, file in phase3_mapping.items():
+        if file:
+            file_path = session_upload_dir / f"{name}.csv"
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            phase3_summary[f"{name}_uploaded"] = True
+
     # Load and validate data
     try:
         data = load_data(str(session_upload_dir))
         validate_foreign_keys(data)
         validate_nulls(data)
+
+        # Phase 2 validation if Phase 2 data exists
+        if 'routing_alt' in data:
+            validate_routing_alternate(data)
+        if 'orders' in data and 'release_time' in data['orders'].columns:
+            validate_orders_phase2(data)
+
+        # Phase 3 validation if Phase 3 data exists
+        if 'bom' in data and data['bom'] is not None:
+            validate_bom(data)
+        if 'order_links' in data and data['order_links'] is not None:
+            validate_order_links(data)
+        if 'orders_multi' in data and data['orders_multi'] is not None:
+            validate_orders_multilevel(data)
+
         validation_passed = True
         validation_message = "All validations passed"
     except ValueError as e:
@@ -129,7 +167,8 @@ async def upload_files(
         "session_id": session_id,
         "validation_passed": validation_passed,
         "validation_message": validation_message,
-        "phase15_summary": phase15_summary if phase15_summary else None
+        "phase15_summary": phase15_summary if phase15_summary else None,
+        "phase3_summary": phase3_summary if phase3_summary else None
     }
 
 @app.post("/process/{session_id}")
@@ -170,8 +209,16 @@ async def process_workflow(session_id: str):
         session["verification_passed"] = passed
         session["verification_errors"] = errors
 
-        # Compute KPIs
-        kpi_metrics = compute_kpi_metrics(schedule_df, data['orders'])
+        # Compute KPIs (Phase 3 aware)
+        orders_df = data.get('orders_multi', data.get('orders'))
+        original_orders_count = len(data.get('orders', orders_df)) if data.get('orders') is not None else len(orders_df)
+        kpi_metrics = compute_kpi_metrics(
+            schedule_df,
+            orders_df,
+            order_links_df=data.get('order_links'),
+            orders_multi_df=data.get('orders_multi'),
+            original_orders_count=original_orders_count
+        )
         session["kpi_metrics"] = kpi_metrics
 
         return {"status": "completed"}
