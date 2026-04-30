@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+
+#### Backend File Naming (Phase 2 Data)
+- **`backend_api.py`**: Fixed file naming mismatch between frontend and data_loader
+  - Frontend uploads `routing_alternate.csv` with form key `routing`, was saved as `routing.csv`
+  - Frontend uploads `orders_phase2.csv` with form key `orders`, was saved as `orders.csv`
+  - `load_data()` looks for files named `routing_alternate.csv` and `orders_phase2.csv`
+  - Result: Phase 2 routing was never loaded, datetime columns were missing
+  - **Fix**: Backend now saves files with correct Phase 2 names (`routing_alternate.csv`, `orders_phase2.csv`)
+
+#### Scheduler Operation Sequencing
+- **`scheduler.py`**: Fixed operation_seq order not respected across interleaved orders
+  - Problem: `current_time` was a single global variable shared across all orders
+  - When orders were sorted by `due_date` only, operations from different orders interleaved
+  - `current_time` from one order would override the chain for another order's operations
+  - Example: ORD_00000 seq 4 could start before seq 3 if a different order's op was processed in between
+  - **Fix**: Added `order_end_times` dict to track per-order end times
+    - First operation of each order: uses `max(order_date, release_time, material_time)`
+    - Subsequent operations: use `previous_end` from `order_end_times[order_id]`
+    - Now operation N+1 always starts after N completes, regardless of interleaving
+
 ### Frontend Updates
 
 #### Bug Fixes

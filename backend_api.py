@@ -49,8 +49,8 @@ async def upload_files(
     file_mapping = {
         "machines": machines,
         "products": products,
-        "routing": routing,
-        "orders": orders
+        "routing_alternate": routing,
+        "orders_phase2": orders
     }
 
     for name, file in file_mapping.items():

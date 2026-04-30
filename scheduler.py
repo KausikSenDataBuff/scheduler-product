@@ -237,7 +237,7 @@ def run_scheduler(data, jobs_df=None):
         on='order_id',
         how='left'
     )
-    jobs_sorted = jobs_with_orders.sort_values('due_date', ascending=True)
+    jobs_sorted = jobs_with_orders.sort_values(['due_date', 'order_id', 'operation_seq'], ascending=[True, True, True])
 
     # 2. Initialize machine state with capacity support
     machine_intervals = {row['machine_id']: [] for _, row in machines_df.iterrows()}
@@ -252,6 +252,10 @@ def run_scheduler(data, jobs_df=None):
     # List to collect scheduled operations
     scheduled_ops = []
 
+    # Track the end time of the last scheduled operation for each order
+    # This ensures operations within an order are sequential
+    order_end_times = {}
+
     # 3. Process each job in due_date order
     for _, job in jobs_sorted.iterrows():
         order_id = job['order_id']
@@ -263,7 +267,15 @@ def run_scheduler(data, jobs_df=None):
         # Phase 2: Apply release and material constraints
         release_time = job.get('release_time', order_date)
         material_time = job.get('material_available_time', order_date)
-        current_time = apply_release_constraint(order_date, release_time, material_time)
+        constraint_time = apply_release_constraint(order_date, release_time, material_time)
+
+        # For subsequent operations of the same order, start after the previous operation ended
+        # Otherwise use the constraint time
+        previous_end = order_end_times.get(order_id)
+        if previous_end is not None:
+            current_time = previous_end
+        else:
+            current_time = constraint_time
 
         # Phase 2: Select best machine from candidates
         best_machine, start_time, end_time, is_primary = select_best_machine(
@@ -309,8 +321,8 @@ def run_scheduler(data, jobs_df=None):
         # Update last product for this machine
         last_product[best_machine] = product_id
 
-        # For the next operation in this order, we start when this operation ends
-        current_time = end_time
+        # Track the end time for this order (used for chaining operations within the order)
+        order_end_times[order_id] = end_time
 
     # Return the scheduled operations as a DataFrame
     return pd.DataFrame(scheduled_ops)

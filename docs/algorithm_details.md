@@ -27,9 +27,13 @@ current_time = max(order_date, release_time, material_available_time)
 ```
 
 ### 4. Operation Scheduling with Candidate Machines (Phase 2)
-For each order (in due date order):
-- Set `current_time = max(order_date, release_time, material_time)` (Phase 2)
-- For each operation (sorted by `operation_seq`):
+For each job (in due date order, sorted by [due_date, order_id, operation_seq]):
+- Track `order_end_times[order_id]` - end time of the last scheduled operation for this order
+- For the first operation of an order:
+  - Set `current_time = max(order_date, release_time, material_time)` (Phase 2 constraint)
+- For subsequent operations of the same order:
+  - Set `current_time = order_end_times[order_id]` (chain after previous operation)
+- For each operation:
   - Build `candidate_machines` list from routing_alt
   - Call `select_best_machine()` to pick earliest-finishing machine
   - Adjust for calendar availability
@@ -37,6 +41,7 @@ For each order (in due date order):
   - Find slot with `get_earliest_slot()`
   - Adjust end for calendar
   - Record operation with `is_primary` flag
+  - Update `order_end_times[order_id] = end_time` (chain to next operation)
 
 ### 5. Key Scheduling Functions (Phase 2)
 

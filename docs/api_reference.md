@@ -190,13 +190,16 @@ machine_state = initialize_machine_state(data)
   - is_primary (bool)
 
 **Algorithm:**
-1. Sort jobs by due_date (ascending)
-2. For each order: current_time = max(order_date, release_time, material_time)
-3. For each operation:
+1. Sort jobs by [due_date, order_id, operation_seq] (ascending)
+2. Track `order_end_times[order_id]` - end time of last scheduled operation per order
+3. For each job:
+   - **First operation**: `current_time = max(order_date, release_time, material_time)`
+   - **Subsequent operations**: `current_time = order_end_times[order_id]` (chain after previous)
    - Select best machine from candidates (earliest completion)
    - Add setup time if transitioning products
    - Schedule on best machine
    - Store result
+   - Update `order_end_times[order_id] = end_time`
 
 **Example:**
 ```python

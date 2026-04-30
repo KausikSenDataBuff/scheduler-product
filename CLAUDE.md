@@ -138,16 +138,17 @@ current_time = max(order_date, release_time, material_available_time)
 
 ## Scheduling Algorithm (Phase 2)
 
-1. Sort orders by `due_date` (ascending)
+1. Sort jobs by `due_date` (ascending), then `order_id`, then `operation_seq`
 2. Build jobs with `candidate_machines` per operation
-3. For each order:
-   - `current_time = max(order_date, release_time, material_available_time)`
-   - For each operation (sorted by `operation_seq`):
-     - Select best machine from candidates (earliest end time)
-     - Add setup time if product changed
-     - `start, end = get_earliest_slot(...)`
-     - Record and update machine state
-     - `current_time = end`
+3. Track `order_end_times[order_id]` - end time of last scheduled operation per order
+4. For each job:
+   - **First operation of order**: `current_time = max(order_date, release_time, material_available_time)`
+   - **Subsequent operations**: `current_time = order_end_times[order_id]` (chain after previous op)
+   - Select best machine from candidates (earliest end time)
+   - Add setup time if product changed
+   - `start, end = get_earliest_slot(...)`
+   - Record and update machine state
+   - `order_end_times[order_id] = end` (for next operation)
 
 ## Phase 2 KPIs
 
