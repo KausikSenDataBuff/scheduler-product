@@ -1,10 +1,16 @@
-# Scheduler Product v2.0
+# Scheduler Product v2.1
 
-A production scheduling system that processes orders through operations on machines, with support for alternate machine routing, release/material constraints, parallel capacity, machine calendars, setup times, and WIP control.
+A production scheduling system that processes orders through operations on machines, with support for alternate machine routing, release/material constraints, parallel capacity, machine calendars, setup times, multi-level orders with parent-child dependencies, and BOM-based scheduling.
 
 ## Features
 
-### Phase 2.0 Features (NEW)
+### Phase 3.0 Features (NEW)
+- **Multi-Level Orders**: Hierarchical orders with parent-child dependencies
+- **Dependency Constraints**: Child orders must complete before parent starts
+- **BOM Support**: Bill of Materials for product hierarchy visualization
+- **Phase 3 KPIs**: Dependency delay, critical path length, component service level, WIP explosion factor
+
+### Phase 2.0 Features
 - **Alternate Machine Routing**: Each operation can run on multiple machines; scheduler picks the fastest
 - **Release + Material Constraints**: Orders can't start until materials are available
 - **Phase 2 KPIs**: Machine utilization, alternate usage %, release delay metrics
@@ -45,7 +51,8 @@ pip install pandas matplotlib fastapi uvicorn python-multipart pytest
 
 3. **Upload your data files:**
    - Required: `machines_updated.csv`, `products.csv`, `routing_alternate.csv`, `orders_phase2.csv`
-   - Optional: `machine_calendar.csv`, `setup_matrix.csv`, `sections.csv`, `buffers.csv`
+   - Optional Phase 1.5: `machine_calendar.csv`, `setup_matrix.csv`, `sections.csv`, `buffers.csv`
+   - Optional Phase 3: `orders_multilevel.csv`, `order_links.csv`, `bom.csv`
 
 ### Option 2: Command Line
 
@@ -82,6 +89,13 @@ python tests/test_setup.py
 | `setup_matrix.csv` | Product transition setup times |
 | `sections.csv` | Section definitions |
 | `buffers.csv` | Buffer capacity per section |
+
+### Phase 3 Data (Multi-Level Orders)
+| File | Description |
+|------|-------------|
+| `orders_multilevel.csv` | Orders with level, parent_order_id |
+| `order_links.csv` | Parent-child order dependencies |
+| `bom.csv` | Bill of Materials (parent→child) |
 
 ### Phase 2 Data Format
 
@@ -121,6 +135,15 @@ ORD_00000,TYRE_0036,56,2026-01-07,2026-01-10,2026-01-08 12:00:00,2026-01-09 00:0
 | `alt_machine_usage_pct` | % of jobs using non-primary machines |
 | `avg_release_delay` | Avg delay from release constraints (hrs) |
 
+## Phase 3 KPIs
+
+| Metric | Description |
+|--------|-------------|
+| `dependency_delay` | Avg parent_start - max(child_completion) (hrs) |
+| `critical_path_length` | Longest chain per top-level order |
+| `component_service_level` | % child orders meeting parent need |
+| `wip_explosion_factor` | multi-level orders / original orders |
+
 ## Module Overview
 
 ```
@@ -136,4 +159,4 @@ data_loader.py → validator.py → job_builder.py → scheduler.py → kpi.py
 - [docs/api_reference.md](docs/api_reference.md) - API documentation
 
 ## Version
-Current: **v2.0.0** (Phase 2: Alternate Machine Routing & Release Constraints)
+Current: **v2.1.0** (Phase 3: Multi-Level Orders & BOM Integration)

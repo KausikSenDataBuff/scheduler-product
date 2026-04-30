@@ -3,208 +3,451 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scheduler Product v2.0 - Production Scheduling System</title>
+    <title>Scheduler Pro v3.0 - Multi-Level Production Scheduling</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 </head>
 <body>
+    <div class="bg-pattern"></div>
+    <div class="bg-glow"></div>
+
     <div class="container">
-        <header>
-            <h1>Scheduler Product <span class="version-badge">v2.0</span></h1>
-            <p>Production Scheduling with Alternate Machine Routing & Release Constraints</p>
+        <header class="hero">
+            <div class="hero-content">
+                <div class="badge-row">
+                    <span class="version-badge">v3.0</span>
+                    <span class="new-badge">NEW</span>
+                </div>
+                <h1>Scheduler <span class="gradient-text">Pro</span></h1>
+                <p class="tagline">Multi-Level Production Scheduling with BOM Explosion & Dependency Constraints</p>
+            </div>
+            <div class="hero-visual">
+                <div class="flow-diagram">
+                    <div class="flow-node root">Root Order</div>
+                    <div class="flow-connectors">
+                        <div class="flow-line"></div>
+                        <div class="flow-line"></div>
+                        <div class="flow-line"></div>
+                    </div>
+                    <div class="flow-children">
+                        <div class="flow-node child">Child 1</div>
+                        <div class="flow-node child">Child 2</div>
+                        <div class="flow-node child">Child 3</div>
+                    </div>
+                </div>
+            </div>
         </header>
 
         <main>
-            <!-- Phase 2 Features Info -->
+            <!-- Phase 3 Features -->
             <section class="features-section" id="features-section">
-                <h2>Phase 2.0 Features</h2>
+                <div class="section-header">
+                    <span class="section-tag">What's New</span>
+                    <h2>Phase 3.0 Capabilities</h2>
+                </div>
                 <div class="features-grid">
-                    <div class="feature-card">
-                        <span class="feature-icon">🔀</span>
-                        <h3>Alternate Machines</h3>
-                        <p>Scheduler picks fastest machine from multiple candidates</p>
+                    <div class="feature-card phase3-card">
+                        <div class="feature-visual bom-visual">
+                            <div class="bom-tree">
+                                <div class="bom-node bom-root">FG Product</div>
+                                <div class="bom-branches">
+                                    <div class="bom-branch">
+                                        <div class="bom-node bom-child">Sub Assy A</div>
+                                        <div class="bom-leaf">Part x4</div>
+                                    </div>
+                                    <div class="bom-branch">
+                                        <div class="bom-node bom-child">Sub Assy B</div>
+                                        <div class="bom-leaf">Part y2</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="feature-content">
+                            <h3>BOM Explosion</h3>
+                            <p>Multi-level bill of materials with parent-child product hierarchies</p>
+                        </div>
                     </div>
-                    <div class="feature-card">
-                        <span class="feature-icon">📦</span>
-                        <h3>Release Constraints</h3>
-                        <p>Orders wait for materials before starting</p>
+
+                    <div class="feature-card phase3-card">
+                        <div class="feature-visual dep-visual">
+                            <div class="dep-nodes">
+                                <div class="dep-node dep-parent">Parent</div>
+                                <div class="dep-arrow">
+                                    <span class="dep-label">waits for</span>
+                                </div>
+                                <div class="dep-node dep-child">Children</div>
+                            </div>
+                        </div>
+                        <div class="feature-content">
+                            <h3>Order Dependencies</h3>
+                            <p>Parent orders blocked until all child orders complete</p>
+                        </div>
                     </div>
-                    <div class="feature-card">
-                        <span class="feature-icon">⚡</span>
-                        <h3>Parallel Capacity</h3>
-                        <p>Machines can process multiple concurrent operations</p>
+
+                    <div class="feature-card phase3-card">
+                        <div class="feature-visual crit-visual">
+                            <div class="crit-path">
+                                <div class="crit-node done">Op 1</div>
+                                <div class="crit-node done">Op 2</div>
+                                <div class="crit-node active">Op 3</div>
+                                <div class="crit-node">Op 4</div>
+                                <div class="crit-node">Op 5</div>
+                            </div>
+                            <span class="crit-label">Critical Path</span>
+                        </div>
+                        <div class="feature-content">
+                            <h3>Critical Path</h3>
+                            <p>Track longest dependency chain per top-level order</p>
+                        </div>
                     </div>
-                    <div class="feature-card">
-                        <span class="feature-icon">📅</span>
-                        <h3>Machine Calendar</h3>
-                        <p>Downtime-aware scheduling prevents unavailable periods</p>
+
+                    <div class="feature-card phase3-card">
+                        <div class="feature-visual wip-visual">
+                            <div class="wip-bars">
+                                <div class="wip-bar" style="--h: 20%"></div>
+                                <div class="wip-bar" style="--h: 45%"></div>
+                                <div class="wip-bar" style="--h: 70%"></div>
+                                <div class="wip-bar active" style="--h: 100%"></div>
+                            </div>
+                            <span class="wip-label">WIP Explosion Factor</span>
+                        </div>
+                        <div class="feature-content">
+                            <h3>WIP Metrics</h3>
+                            <p>Multi-level vs flat order ratio tracking</p>
+                        </div>
                     </div>
                 </div>
-                <div class="features-grid" style="margin-top: 15px;">
-                    <div class="feature-card">
-                        <span class="feature-icon">🔧</span>
-                        <h3>Setup Time</h3>
-                        <p>Product transition times between operations</p>
-                    </div>
-                    <div class="feature-card">
-                        <span class="feature-icon">📊</span>
-                        <h3>Phase 2 KPIs</h3>
-                        <p>Utilization, alt usage %, release delay metrics</p>
+
+                <div class="phase-legacy">
+                    <h4>Also Available</h4>
+                    <div class="legacy-grid">
+                        <div class="legacy-item">
+                            <span class="legacy-icon">🔀</span>
+                            <span>Alternate Machine Routing</span>
+                        </div>
+                        <div class="legacy-item">
+                            <span class="legacy-icon">📦</span>
+                            <span>Release Constraints</span>
+                        </div>
+                        <div class="legacy-item">
+                            <span class="legacy-icon">⚡</span>
+                            <span>Parallel Capacity</span>
+                        </div>
+                        <div class="legacy-item">
+                            <span class="legacy-icon">📅</span>
+                            <span>Machine Calendar</span>
+                        </div>
+                        <div class="legacy-item">
+                            <span class="legacy-icon">🔧</span>
+                            <span>Setup Times</span>
+                        </div>
                     </div>
                 </div>
             </section>
 
             <!-- Progress Tracker -->
             <section class="progress-section" id="progress-section">
-                <h2>Workflow Progress</h2>
+                <div class="section-header">
+                    <span class="section-tag">Workflow</span>
+                    <h2>Processing Pipeline</h2>
+                </div>
                 <div class="progress-tracker">
-                    <div class="step" id="step-upload">⬜ Upload</div>
-                    <div class="step" id="step-validation">⬜ Validation</div>
-                    <div class="step" id="step-jobs">⬜ Job Building</div>
-                    <div class="step" id="step-scheduling">⬜ Scheduling</div>
-                    <div class="step" id="step-verification">⬜ Verification</div>
-                    <div class="step" id="step-kpi">⬜ KPI Calculation</div>
-                    <div class="step" id="step-visualization">⬜ Visualization</div>
+                    <div class="step" id="step-upload">
+                        <span class="step-indicator">1</span>
+                        <span class="step-text">Upload</span>
+                    </div>
+                    <div class="step" id="step-validation">
+                        <span class="step-indicator">2</span>
+                        <span class="step-text">Validate</span>
+                    </div>
+                    <div class="step" id="step-jobs">
+                        <span class="step-indicator">3</span>
+                        <span class="step-text">Build Jobs</span>
+                    </div>
+                    <div class="step" id="step-scheduling">
+                        <span class="step-indicator">4</span>
+                        <span class="step-text">Schedule</span>
+                    </div>
+                    <div class="step" id="step-verification">
+                        <span class="step-indicator">5</span>
+                        <span class="step-text">Verify</span>
+                    </div>
+                    <div class="step" id="step-kpi">
+                        <span class="step-indicator">6</span>
+                        <span class="step-text">KPIs</span>
+                    </div>
+                    <div class="step" id="step-visualization">
+                        <span class="step-indicator">7</span>
+                        <span class="step-text">Visualize</span>
+                    </div>
                 </div>
                 <div id="status-message" class="status-message"></div>
             </section>
 
             <!-- File Upload Section -->
             <section class="upload-section" id="upload-section">
-                <h2>1. Upload Data Files</h2>
-                <p class="upload-info">Upload the Phase 2 CSV files. Phase 1.5 files are optional.</p>
-                <div class="file-upload-grid">
-                    <div class="file-group">
-                        <label for="machines-file">machines_updated.csv <span class="required">*</span></label>
-                        <input type="file" id="machines-file" accept=".csv" required>
-                        <small>Machine info with capacity</small>
-                    </div>
-                    <div class="file-group">
-                        <label for="products-file">products.csv <span class="required">*</span></label>
-                        <input type="file" id="products-file" accept=".csv" required>
-                        <small>Product information</small>
-                    </div>
-                    <div class="file-group">
-                        <label for="routing-file">routing_alternate.csv <span class="required">*</span></label>
-                        <input type="file" id="routing-file" accept=".csv" required>
-                        <small>Multi-machine routing (is_primary, efficiency)</small>
-                    </div>
-                    <div class="file-group">
-                        <label for="orders-file">orders_phase2.csv <span class="required">*</span></label>
-                        <input type="file" id="orders-file" accept=".csv" required>
-                        <small>Orders with release_time, material_available_time</small>
+                <div class="section-header">
+                    <span class="section-tag">Step 1</span>
+                    <h2>Upload Data Files</h2>
+                </div>
+
+                <div class="upload-tabs">
+                    <button class="upload-tab active" data-phase="core">Core Files <span class="required">*</span></button>
+                    <button class="upload-tab" data-phase="phase15">Phase 1.5</button>
+                    <button class="upload-tab phase3-tab" data-phase="phase3">
+                        Phase 3
+                        <span class="new-indicator">NEW</span>
+                    </button>
+                </div>
+
+                <div class="upload-panel" id="core-panel">
+                    <div class="file-grid">
+                        <div class="file-card required">
+                            <label for="machines-file">
+                                <span class="file-icon">🏭</span>
+                                <span class="file-name">machines_updated.csv</span>
+                            </label>
+                            <input type="file" id="machines-file" accept=".csv" required>
+                            <span class="file-desc">Machine definitions with capacity</span>
+                        </div>
+                        <div class="file-card required">
+                            <label for="products-file">
+                                <span class="file-icon">📦</span>
+                                <span class="file-name">products.csv</span>
+                            </label>
+                            <input type="file" id="products-file" accept=".csv" required>
+                            <span class="file-desc">Product catalog</span>
+                        </div>
+                        <div class="file-card required">
+                            <label for="routing-file">
+                                <span class="file-icon">🔀</span>
+                                <span class="file-name">routing_alternate.csv</span>
+                            </label>
+                            <input type="file" id="routing-file" accept=".csv" required>
+                            <span class="file-desc">Multi-machine routing matrix</span>
+                        </div>
+                        <div class="file-card required">
+                            <label for="orders-file">
+                                <span class="file-icon">📋</span>
+                                <span class="file-name">orders_phase2.csv</span>
+                            </label>
+                            <input type="file" id="orders-file" accept=".csv" required>
+                            <span class="file-desc">Orders with constraints</span>
+                        </div>
                     </div>
                 </div>
 
-                <h3 class="optional-header">Phase 1.5 Optional Files</h3>
-                <div class="file-upload-grid optional">
-                    <div class="file-group">
-                        <label for="calendar-file">machine_calendar.csv</label>
-                        <input type="file" id="calendar-file" accept=".csv">
-                        <small>Machine availability windows</small>
-                    </div>
-                    <div class="file-group">
-                        <label for="setup-file">setup_matrix.csv</label>
-                        <input type="file" id="setup-file" accept=".csv">
-                        <small>Product transition times</small>
-                    </div>
-                    <div class="file-group">
-                        <label for="sections-file">sections.csv</label>
-                        <input type="file" id="sections-file" accept=".csv">
-                        <small>Section definitions</small>
-                    </div>
-                    <div class="file-group">
-                        <label for="buffers-file">buffers.csv</label>
-                        <input type="file" id="buffers-file" accept=".csv">
-                        <small>Buffer capacity</small>
+                <div class="upload-panel" id="phase15-panel" style="display: none;">
+                    <div class="file-grid">
+                        <div class="file-card">
+                            <label for="calendar-file">
+                                <span class="file-icon">📅</span>
+                                <span class="file-name">machine_calendar.csv</span>
+                            </label>
+                            <input type="file" id="calendar-file" accept=".csv">
+                            <span class="file-desc">Machine availability</span>
+                        </div>
+                        <div class="file-card">
+                            <label for="setup-file">
+                                <span class="file-icon">🔧</span>
+                                <span class="file-name">setup_matrix.csv</span>
+                            </label>
+                            <input type="file" id="setup-file" accept=".csv">
+                            <span class="file-desc">Product transitions</span>
+                        </div>
+                        <div class="file-card">
+                            <label for="sections-file">
+                                <span class="file-icon">🏗️</span>
+                                <span class="file-name">sections.csv</span>
+                            </label>
+                            <input type="file" id="sections-file" accept=".csv">
+                            <span class="file-desc">Section definitions</span>
+                        </div>
+                        <div class="file-card">
+                            <label for="buffers-file">
+                                <span class="file-icon">📥</span>
+                                <span class="file-name">buffers.csv</span>
+                            </label>
+                            <input type="file" id="buffers-file" accept=".csv">
+                            <span class="file-desc">Buffer capacity</span>
+                        </div>
                     </div>
                 </div>
 
-                <div class="upload-buttons">
-                    <button id="upload-btn" class="primary-btn">Upload and Validate</button>
-                    <button id="next-btn" class="primary-btn" disabled>Next Step →</button>
+                <div class="upload-panel" id="phase3-panel" style="display: none;">
+                    <div class="phase3-badge">Multi-Level Order Processing</div>
+                    <div class="file-grid">
+                        <div class="file-card phase3">
+                            <label for="orders-multilevel-file">
+                                <span class="file-icon">🌳</span>
+                                <span class="file-name">orders_multilevel.csv</span>
+                            </label>
+                            <input type="file" id="orders-multilevel-file" accept=".csv">
+                            <span class="file-desc">Hierarchical orders with level</span>
+                        </div>
+                        <div class="file-card phase3">
+                            <label for="order-links-file">
+                                <span class="file-icon">🔗</span>
+                                <span class="file-name">order_links.csv</span>
+                            </label>
+                            <input type="file" id="order-links-file" accept=".csv">
+                            <span class="file-desc">Parent-child dependencies</span>
+                        </div>
+                        <div class="file-card phase3">
+                            <label for="bom-file">
+                                <span class="file-icon">📝</span>
+                                <span class="file-name">bom.csv</span>
+                            </label>
+                            <input type="file" id="bom-file" accept=".csv">
+                            <span class="file-desc">Bill of materials</span>
+                        </div>
+                    </div>
                 </div>
-            </section>
 
-            <!-- Phase 2 Info Display -->
-            <section class="phase15-info-section" id="phase15-info-section" style="display: none;">
-                <h2>Phase 2 Configuration</h2>
-                <div id="phase15-info" class="results-container">
-                    <!-- Populated by JavaScript -->
+                <div class="upload-actions">
+                    <button id="upload-btn" class="primary-btn">
+                        <span class="btn-icon">↑</span>
+                        Upload & Validate
+                    </button>
+                    <button id="next-btn" class="primary-btn secondary" disabled>Next Step</button>
                 </div>
             </section>
 
             <!-- Validation Results -->
             <section class="validation-section" id="validation-section">
-                <h2>2. Data Validation</h2>
+                <div class="section-header">
+                    <span class="section-tag">Step 2</span>
+                    <h2>Data Validation</h2>
+                </div>
                 <div id="validation-results" class="results-container">
-                    <p>Please upload files to see validation results.</p>
+                    <div class="empty-state">
+                        <span class="empty-icon">📋</span>
+                        <p>Awaiting file upload...</p>
+                    </div>
                 </div>
             </section>
 
             <!-- Job Building Results -->
             <section class="jobs-section" id="jobs-section">
-                <h2>3. Job Building</h2>
+                <div class="section-header">
+                    <span class="section-tag">Step 3</span>
+                    <h2>Job Building</h2>
+                </div>
                 <div id="jobs-results" class="results-container">
-                    <p>Please upload and validate files to see job building results.</p>
+                    <div class="empty-state">
+                        <span class="empty-icon">⚙️</span>
+                        <p>Jobs will appear after successful validation</p>
+                    </div>
                 </div>
             </section>
 
             <!-- Scheduling Results -->
             <section class="scheduling-section" id="scheduling-section">
-                <h2>4. Scheduling</h2>
+                <div class="section-header">
+                    <span class="section-tag">Step 4</span>
+                    <h2>Scheduling</h2>
+                </div>
                 <div id="scheduling-results" class="results-container">
-                    <p>Please upload and validate files to see scheduling results.</p>
+                    <div class="empty-state">
+                        <span class="empty-icon">📅</span>
+                        <p>Schedule will be generated after job building</p>
+                    </div>
                 </div>
             </section>
 
             <!-- Verification Results -->
             <section class="verification-section" id="verification-section">
-                <h2>5. Schedule Verification</h2>
+                <div class="section-header">
+                    <span class="section-tag">Step 5</span>
+                    <h2>Verification</h2>
+                </div>
                 <div id="verification-results" class="results-container">
-                    <p>Please upload and validate files to see verification results.</p>
+                    <div class="empty-state">
+                        <span class="empty-icon">✅</span>
+                        <p>Verification results will appear here</p>
+                    </div>
                 </div>
             </section>
 
             <!-- KPI Results -->
             <section class="kpi-section" id="kpi-section">
-                <h2>6. Key Performance Indicators</h2>
+                <div class="section-header">
+                    <span class="section-tag">Step 6</span>
+                    <h2>Performance Metrics</h2>
+                </div>
                 <div id="kpi-results" class="results-container">
-                    <p>Please upload and validate files to see KPI results.</p>
+                    <div class="empty-state">
+                        <span class="empty-icon">📊</span>
+                        <p>KPI metrics will appear after scheduling</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Dependency Visualization -->
+            <section class="dependency-section" id="dependency-section" style="display: none;">
+                <div class="section-header">
+                    <span class="section-tag">Phase 3</span>
+                    <h2>Order Dependency Graph</h2>
+                </div>
+                <div class="dependency-viz">
+                    <div id="dependency-tree" class="tree-container"></div>
+                    <div class="dependency-legend">
+                        <div class="legend-item">
+                            <span class="legend-dot root"></span>
+                            <span>Root Order (Level 0)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-dot child"></span>
+                            <span>Child Order (Level 1+)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-line"></span>
+                            <span>Dependency Link</span>
+                        </div>
+                    </div>
                 </div>
             </section>
 
             <!-- Visualization -->
             <section class="visualization-section" id="visualization-section">
-                <h2>7. Schedule Visualization</h2>
+                <div class="section-header">
+                    <span class="section-tag">Step 7</span>
+                    <h2>Schedule Visualization</h2>
+                </div>
                 <div class="chart-tabs">
-                    <button class="chart-tab active" data-chart="machine">Machine Gantt</button>
-                    <button class="chart-tab" data-chart="order">Order Gantt</button>
-                    <button class="chart-tab" data-chart="util">Machine Utilization</button>
+                    <button class="chart-tab active" data-chart="machine">Machine View</button>
+                    <button class="chart-tab" data-chart="order">Order View</button>
                 </div>
                 <div class="chart-container" id="machine-gantt-container">
-                    <canvas id="gantt-chart" width="800" height="400"></canvas>
+                    <canvas id="gantt-chart"></canvas>
                 </div>
                 <div class="chart-container" id="order-gantt-container" style="display: none;">
-                    <canvas id="order-gantt-chart" width="800" height="400"></canvas>
+                    <canvas id="order-gantt-chart"></canvas>
                 </div>
-                <div class="chart-container" id="util-container" style="display: none;">
-                    <canvas id="util-chart" width="800" height="400"></canvas>
-                </div>
-                <div class="chart-controls">
-                    <button id="download-chart-btn" class="secondary-btn">Download Chart as PNG</button>
+                <div class="chart-actions">
+                    <button id="download-chart-btn" class="secondary-btn">Download PNG</button>
                 </div>
             </section>
 
             <!-- Actions -->
             <section class="actions-section">
-                <button id="download-schedule-btn" class="secondary-btn">Download Schedule (CSV)</button>
-                <button id="reset-btn" class="secondary-btn">Reset and Start Over</button>
+                <button id="download-schedule-btn" class="action-btn primary">
+                    <span class="btn-icon">📥</span>
+                    Download Schedule CSV
+                </button>
+                <button id="reset-btn" class="action-btn secondary">
+                    <span class="btn-icon">↻</span>
+                    Reset Session
+                </button>
             </section>
         </main>
 
         <footer>
-            <p>Scheduler Product v2.0 - Phase 2: Alternate Machine Routing & Release Constraints</p>
+            <p>Scheduler Pro v3.0 — Multi-Level BOM & Dependency Constrained Scheduling</p>
         </footer>
     </div>
 

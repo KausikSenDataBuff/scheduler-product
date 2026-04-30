@@ -1,9 +1,13 @@
 import pandas as pd
 import os
 from data_loader import load_data
-from validator import validate_foreign_keys, validate_nulls
+from validator import (
+    validate_foreign_keys, validate_nulls,
+    validate_bom, validate_order_links, validate_orders_multilevel,
+    validate_routing_alternate, validate_orders_phase2
+)
 from job_builder import build_jobs, initialize_machine_state
-from scheduler import run_scheduler, save_schedule
+from scheduler import run_scheduler, save_schedule, verify_schedule
 from kpi import compute_kpi_metrics
 
 def plot_gantt(schedule_df, orders_df=None):
@@ -119,15 +123,42 @@ def main():
         print("\n1. Loading data...")
         data = load_data()
         print(f"   Loaded {len(data)} DataFrames")
-        print(f"   Orders: {len(data['orders'])} rows")
+
+        # Determine which orders to use (Phase 3 multi-level or Phase 2)
+        orders_df = data.get('orders_multi', data.get('orders'))
+        print(f"   Orders: {len(orders_df)} rows")
         print(f"   Machines: {len(data['machines'])} rows")
         print(f"   Products: {len(data['products'])} rows")
         print(f"   Routing: {len(data['routing'])} rows")
+
+        # Phase 3 data availability
+        is_phase3 = 'orders_multi' in data and data['orders_multi'] is not None
+        if is_phase3:
+            print(f"   Phase 3: Using multi-level orders ({len(data['orders_multi'])} orders)")
+            if 'order_links' in data and data['order_links'] is not None:
+                print(f"   Phase 3: Order links: {len(data['order_links'])} relationships")
+            if 'bom' in data and data['bom'] is not None:
+                print(f"   Phase 3: BOM entries: {len(data['bom'])}")
 
         # Step 2: Run validations
         print("\n2. Running validations...")
         validate_foreign_keys(data)
         validate_nulls(data)
+        if is_phase3:
+            # Phase 3 validations
+            if 'bom' in data and data['bom'] is not None:
+                validate_bom(data)
+                print("   BOM validation passed")
+            if 'order_links' in data and data['order_links'] is not None:
+                validate_order_links(data)
+                print("   order_links validation passed")
+            if 'orders_multi' in data and data['orders_multi'] is not None:
+                validate_orders_multilevel(data)
+                print("   orders_multilevel validation passed")
+        else:
+            # Phase 2 validations
+            validate_routing_alternate(data)
+            validate_orders_phase2(data)
         print("   All validations passed")
 
         # Step 3: Build jobs
@@ -140,13 +171,27 @@ def main():
         print("\n4. Initializing machine state...")
         machine_state = initialize_machine_state(data)
         print(f"   Initialized state for {len(machine_state)} machines")
-        print(f"   Example: {list(machine_state.items())[0]}")
 
         # Step 5: Run scheduler
         print("\n5. Running scheduler...")
         schedule_df = run_scheduler(data)
         print(f"   Scheduled {len(schedule_df)} operations")
         print(f"   Columns: {list(schedule_df.columns)}")
+
+        # Step 5b: Verify schedule
+        print("\n5b. Verifying schedule...")
+        passed, errors = verify_schedule(
+            schedule_df,
+            data.get('machines'),
+            data.get('order_links'),
+            orders_df
+        )
+        if passed:
+            print("   Schedule verification passed")
+        else:
+            print("   Schedule verification failed:")
+            for err in errors[:5]:
+                print(f"     - {err}")
 
         # Step 6: Save schedule
         print("\n6. Saving schedule...")
@@ -155,17 +200,31 @@ def main():
 
         # Step 7: Compute KPIs
         print("\n7. Computing KPIs...")
-        kpi_metrics = compute_kpi_metrics(schedule_df, data['orders'])
+        if is_phase3:
+            kpi_metrics = compute_kpi_metrics(
+                schedule_df, orders_df,
+                order_links_df=data.get('order_links'),
+                orders_multi_df=data.get('orders_multi'),
+                original_orders_count=len(data.get('orders', orders_df))
+            )
+        else:
+            kpi_metrics = compute_kpi_metrics(schedule_df, orders_df)
         print("   KPI Metrics:")
         for key, value in kpi_metrics.items():
-            if key in ['avg_delay', 'max_delay']:
-                print(f"     {key}: {value:.2f} hours")
+            if key in ['avg_delay', 'max_delay', 'avg_utilization', 'avg_release_delay', 'dependency_delay']:
+                print(f"     {key}: {value:.2f}")
+            elif key in ['on_time_orders', 'late_orders', 'total_orders', 'critical_path_length']:
+                print(f"     {key}: {value}")
+            elif key == 'wip_explosion_factor':
+                print(f"     {key}: {value:.2f}x")
+            elif key == 'component_service_level':
+                print(f"     {key}: {value:.1f}%")
             else:
                 print(f"     {key}: {value}")
 
         # Step 8: Plot Gantt chart
         print("\n8. Plotting Gantt chart...")
-        plot_gantt(schedule_df, data['orders'])
+        plot_gantt(schedule_df, orders_df)
 
         print("\n=== Workflow Completed Successfully ===")
 
