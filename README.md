@@ -1,4 +1,4 @@
-# Scheduler Product v2.1
+# Scheduler Product v3
 
 A production scheduling system that processes orders through operations on machines, with support for alternate machine routing, release/material constraints, parallel capacity, machine calendars, setup times, multi-level orders with parent-child dependencies, and BOM-based scheduling.
 
